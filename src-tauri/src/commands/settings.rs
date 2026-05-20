@@ -26,6 +26,8 @@ pub struct Settings {
     // Voice tone (M1.1)
     pub voice_speed: String,
     pub voice_expressiveness: String,
+    // Memory (M2)
+    pub embedding_model: String,
 }
 
 impl Default for Settings {
@@ -45,6 +47,7 @@ impl Default for Settings {
             window_context_auto: "false".into(),
             voice_speed:          "1.0".into(),
             voice_expressiveness: "0.667".into(),
+            embedding_model:      "nomic-embed-text".into(),
         }
     }
 }
@@ -70,6 +73,7 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<Settings, String> {
         window_context_auto:  pairs.get("window_context_auto").cloned().unwrap_or(d.window_context_auto),
         voice_speed:          pairs.get("voice_speed").cloned().unwrap_or(d.voice_speed),
         voice_expressiveness: pairs.get("voice_expressiveness").cloned().unwrap_or(d.voice_expressiveness),
+        embedding_model:      pairs.get("embedding_model").cloned().unwrap_or(d.embedding_model),
     })
 }
 

@@ -2,8 +2,11 @@ mod audio;
 mod commands;
 mod context;
 mod db;
+mod embed;
 mod llm;
+mod memory;
 mod safety;
+mod summarize;
 mod tts;
 
 use std::sync::{Arc, Mutex};
@@ -90,6 +93,11 @@ pub fn run() {
             commands::context::start_sharing_context,
             commands::context::stop_sharing_context,
             commands::context::set_context_note,
+            // Memory (M2)
+            commands::memory::get_memories,
+            commands::memory::get_memory_count,
+            commands::memory::delete_memory,
+            commands::memory::forget_all,
             // Settings
             commands::settings::get_settings,
             commands::settings::update_setting,

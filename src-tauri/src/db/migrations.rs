@@ -71,6 +71,24 @@ pub fn run(conn: &Connection) -> anyhow::Result<()> {
         ")?;
     }
 
+    if version < 4 {
+        conn.execute_batch("
+            CREATE TABLE IF NOT EXISTS memories (
+                id          TEXT PRIMARY KEY,
+                session_id  TEXT,
+                content     TEXT NOT NULL,
+                embedding   BLOB NOT NULL,
+                memory_type TEXT NOT NULL DEFAULT 'session_summary',
+                created_at  INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_memories_created ON memories(created_at DESC);
+
+            INSERT OR IGNORE INTO settings VALUES ('embedding_model', 'nomic-embed-text');
+
+            INSERT INTO schema_version VALUES (4);
+        ")?;
+    }
+
     // Future migrations go here as `if version < N { ... }` blocks.
     // Never edit a migration that has already been applied.
 

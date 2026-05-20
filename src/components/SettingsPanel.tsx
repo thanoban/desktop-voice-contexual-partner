@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useOllamaStore } from "@/store/ollamaStore";
-import { getAudioDevices, type AudioDevice } from "@/lib/tauri";
+import { getAudioDevices, getMemoryCount, type AudioDevice } from "@/lib/tauri";
+import { MemoryPanel } from "@/components/MemoryPanel";
 
 const PERSONALITIES = [
   { id: "gentle",    label: "Gentle",    desc: "Warm, patient, softly encouraging" },
@@ -27,18 +28,22 @@ export function SettingsPanel({ open, onClose }: Props) {
   const models = useOllamaStore((s) => s.models);
   const [localEndpoint, setLocalEndpoint] = useState(settings.endpoint);
   const [audioDevices, setAudioDevices] = useState<AudioDevice[]>([]);
+  const [memoryCount, setMemoryCount] = useState(0);
+  const [memoryPanelOpen, setMemoryPanelOpen] = useState(false);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setLocalEndpoint(settings.endpoint); }, [settings.endpoint]);
   useEffect(() => {
     if (open) {
       getAudioDevices().then(setAudioDevices).catch(() => null);
+      getMemoryCount().then(setMemoryCount).catch(() => null);
     }
   }, [open]);
 
   if (!open) return null;
 
   return (
+    <>
     <div
       style={{
         position: "fixed",
@@ -64,7 +69,7 @@ export function SettingsPanel({ open, onClose }: Props) {
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <h2 style={{ fontSize: "16px", fontWeight: 600 }}>Settings</h2>
-          <button onClick={onClose} style={btnStyle}>✕</button>
+          <button type="button" onClick={onClose} style={btnStyle}>✕</button>
         </div>
 
         {/* Companion */}
@@ -78,6 +83,7 @@ export function SettingsPanel({ open, onClose }: Props) {
           <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
             {PERSONALITIES.map((p) => (
               <button
+                type="button"
                 key={p.id}
                 onClick={() => update("personality", p.id)}
                 style={{
@@ -232,11 +238,46 @@ export function SettingsPanel({ open, onClose }: Props) {
           )}
         </Section>
 
+        {/* Memory */}
+        <Section title="Memory">
+          <Label>Embedding model</Label>
+          <Input
+            value={settings.embedding_model}
+            onChange={(v) => update("embedding_model", v)}
+            placeholder="nomic-embed-text"
+          />
+          <p style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+            Run: <code style={{ fontSize: "10px", background: "var(--bg-elevated)", padding: "1px 4px", borderRadius: "3px" }}>ollama pull nomic-embed-text</code>
+          </p>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <span style={{ fontSize: "13px", color: "var(--text-muted)", flex: 1 }}>
+              {memoryCount} {memoryCount === 1 ? "memory" : "memories"} stored
+            </span>
+            <button
+              type="button"
+              onClick={() => setMemoryPanelOpen(true)}
+              style={{
+                background: "transparent",
+                border: "1px solid var(--text-dim)",
+                borderRadius: "6px",
+                color: "var(--text-muted)",
+                fontSize: "12px",
+                padding: "5px 10px",
+                cursor: "pointer",
+              }}
+            >
+              View memories
+            </button>
+          </div>
+        </Section>
+
         <div style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "auto" }}>
           VoicePartner v0.1.0 · AGPL-3.0 · All data stays on your machine
         </div>
       </div>
     </div>
+    <MemoryPanel open={memoryPanelOpen} onClose={() => setMemoryPanelOpen(false)} />
+    </>
   );
 }
 

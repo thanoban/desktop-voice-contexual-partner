@@ -23,6 +23,7 @@ export interface Settings {
   window_context_auto: string;
   voice_speed: string;
   voice_expressiveness: string;
+  embedding_model: string;
 }
 
 export interface OllamaStatus {
@@ -140,3 +141,25 @@ export const onContextUpdate = (cb: (status: ContextStatus) => void): Promise<Un
 
 export const onSafetyShow = (cb: () => void): Promise<UnlistenFn> =>
   listen("safety:show", () => cb());
+
+// ── Memory commands (M2) ─────────────────────────────────────────────────────
+
+export interface Memory {
+  id: string;
+  session_id: string | null;
+  content: string;
+  memory_type: string;
+  created_at: number;
+}
+
+export const getMemories = (): Promise<Memory[]> =>
+  invoke("get_memories");
+
+export const getMemoryCount = (): Promise<number> =>
+  invoke("get_memory_count");
+
+export const deleteMemory = (id: string): Promise<void> =>
+  invoke("delete_memory", { id });
+
+export const forgetAll = (): Promise<void> =>
+  invoke("forget_all");

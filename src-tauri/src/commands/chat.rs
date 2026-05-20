@@ -1,8 +1,24 @@
 use crate::db;
 use crate::llm::client::ChatMessage;
+use crate::memory;
 use crate::safety;
 use crate::AppState;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
+
+fn format_age(created_at_ms: i64) -> String {
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+    let diff = (now_ms - created_at_ms) / 1000;
+    if diff < 3600 {
+        format!("{}m ago", diff / 60)
+    } else if diff < 86_400 {
+        format!("{}h ago", diff / 3600)
+    } else {
+        format!("{}d ago", diff / 86_400)
+    }
+}
 
 fn personality_prompt(preset: &str, name: &str) -> String {
     let tone = match preset {
@@ -41,7 +57,7 @@ pub async fn send_message(
 
     // DB work — all sync, no .await held
     let (session_id, model, endpoint, personality, name, piper_binary, piper_voice,
-         voice_speed, voice_expressiveness, window_context_auto) = {
+         voice_speed, voice_expressiveness, window_context_auto, embedding_model) = {
         let conn = state.db.lock().map_err(|e| e.to_string())?;
         let sid = db::ensure_session(&conn).map_err(|e| e.to_string())?;
         db::save_turn(&conn, &sid, "user", &content).map_err(|e| e.to_string())?;
@@ -54,7 +70,8 @@ pub async fn send_message(
         let speed    = db::get_setting(&conn, "voice_speed").unwrap_or_else(|| "1.0".into());
         let expr     = db::get_setting(&conn, "voice_expressiveness").unwrap_or_else(|| "0.667".into());
         let ctx_auto = db::get_setting(&conn, "window_context_auto").unwrap_or_else(|| "false".into());
-        (sid, model, endpoint, persona, name, piper, voice, speed, expr, ctx_auto)
+        let emb_mdl  = db::get_setting(&conn, "embedding_model").unwrap_or_else(|| "nomic-embed-text".into());
+        (sid, model, endpoint, persona, name, piper, voice, speed, expr, ctx_auto, emb_mdl)
     }; // MutexGuard dropped here
 
     // Build recent context
@@ -62,6 +79,34 @@ pub async fn send_message(
         let conn = state.db.lock().map_err(|e| e.to_string())?;
         db::get_recent_turns(&conn, &session_id, 20)
     };
+
+    // Memory recall: embed user message, find relevant past memories (best-effort)
+    let query_emb: Option<Vec<f32>> = if !embedding_model.is_empty() {
+        crate::embed::embed_text(&endpoint, &embedding_model, &content)
+            .await
+            .ok()
+    } else {
+        None
+    };
+
+    let memory_block: Option<String> = query_emb.as_ref().and_then(|emb| {
+        let conn = state.db.lock().ok()?;
+        let results = memory::search_memories(&conn, emb, 3);
+        // Only inject memories with meaningful similarity (> 0.5)
+        let relevant: Vec<_> = results.into_iter().filter(|r| r.score > 0.5).collect();
+        if relevant.is_empty() {
+            None
+        } else {
+            let lines: Vec<String> = relevant
+                .iter()
+                .map(|r| format!("• {}: {}", format_age(r.memory.created_at), r.memory.content))
+                .collect();
+            Some(format!(
+                "[MEMORIES — relevant things from past conversations]\n{}\n[/MEMORIES]",
+                lines.join("\n")
+            ))
+        }
+    });
 
     // Build context injection: auto (always-on) or manual sharing
     let context_block = {
@@ -90,6 +135,10 @@ pub async fn send_message(
     }; // MutexGuard dropped
 
     let mut system_prompt = personality_prompt(&personality, &name);
+    if let Some(ref mem) = memory_block {
+        system_prompt.push_str("\n\n");
+        system_prompt.push_str(mem);
+    }
     if let Some(ref ctx) = context_block {
         system_prompt.push_str("\n\n");
         system_prompt.push_str(ctx);
@@ -130,6 +179,42 @@ pub async fn send_message(
     // Emit safety panel signal if distress detected
     if distress != safety::DistressLevel::None {
         let _ = app.emit("safety:show", ());
+    }
+
+    // Background: summarize + embed + store memory every 4 turns (4, 8, 12, ...)
+    {
+        let app_bg    = app.clone();
+        let ep_bg     = endpoint.clone();
+        let m_bg      = model.clone();
+        let em_bg     = embedding_model.clone();
+        let sid_bg    = session_id.clone();
+        tokio::spawn(async move {
+            if em_bg.is_empty() { return; }
+
+            let (turn_count, recent_turns) = {
+                let state = app_bg.state::<AppState>();
+                let conn = match state.db.lock() { Ok(c) => c, Err(_) => return };
+                let count = db::get_turn_count(&conn, &sid_bg).unwrap_or(0);
+                let turns = db::get_recent_turns(&conn, &sid_bg, 8);
+                (count, turns)
+            };
+
+            if turn_count < 4 || turn_count % 4 != 0 { return; }
+
+            let summary = match crate::summarize::summarize_session(&ep_bg, &m_bg, &recent_turns).await {
+                Ok(s) => s,
+                Err(_) => return,
+            };
+
+            let embedding = match crate::embed::embed_text(&ep_bg, &em_bg, &summary).await {
+                Ok(e) => e,
+                Err(_) => return,
+            };
+
+            let state = app_bg.state::<AppState>();
+            let conn = match state.db.lock() { Ok(c) => c, Err(_) => return };
+            let _ = memory::store_memory(&conn, &sid_bg, &summary, &embedding, "session_summary");
+        });
     }
 
     // Speak via Piper TTS (best-effort, errors are non-fatal)

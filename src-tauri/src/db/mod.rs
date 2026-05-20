@@ -70,6 +70,14 @@ pub fn save_turn(conn: &Connection, session_id: &str, role: &str, content: &str)
     Ok(())
 }
 
+pub fn get_turn_count(conn: &Connection, session_id: &str) -> rusqlite::Result<i64> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM turns WHERE session_id = ?1",
+        rusqlite::params![session_id],
+        |row| row.get(0),
+    )
+}
+
 pub fn get_recent_turns(conn: &Connection, session_id: &str, limit: usize) -> Vec<(String, String)> {
     let mut stmt = conn
         .prepare(

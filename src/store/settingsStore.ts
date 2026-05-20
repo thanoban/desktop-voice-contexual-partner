@@ -22,6 +22,7 @@ const defaults: Settings = {
   window_context_auto: "false",
   voice_speed: "1.0",
   voice_expressiveness: "0.667",
+  embedding_model: "nomic-embed-text",
 };
 
 export const useSettingsStore = create<SettingsState>((set) => ({
