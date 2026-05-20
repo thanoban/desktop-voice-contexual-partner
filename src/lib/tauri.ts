@@ -21,6 +21,8 @@ export interface Settings {
   whisper_model: string;
   audio_input_device: string;
   window_context_auto: string;
+  voice_speed: string;
+  voice_expressiveness: string;
 }
 
 export interface OllamaStatus {

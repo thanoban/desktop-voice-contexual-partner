@@ -6,13 +6,24 @@ use tauri::AppHandle;
 use tauri::Emitter;
 
 /// Speaks `text` using Piper TTS.
-/// Falls back silently if piper is not configured or not found.
-pub async fn speak(app: &AppHandle, piper_binary: &str, voice: &str, text: &str) -> Result<()> {
+/// `speed` — length-scale (1.0 = normal, 0.8 = faster, 1.3 = slower).
+/// `expressiveness` — noise-scale (0.0 = flat, 0.667 = default, 1.0 = very expressive).
+pub async fn speak(
+    app: &AppHandle,
+    piper_binary: &str,
+    voice: &str,
+    text: &str,
+    speed: f32,
+    expressiveness: f32,
+) -> Result<()> {
     let binary = resolve_binary(piper_binary)?;
     let voice_path = resolve_voice(voice)?;
     let out_file = temp_wav_path();
 
     let _ = app.emit("tts:start", ());
+
+    let speed_str = format!("{:.3}", speed.clamp(0.3, 3.0));
+    let expr_str  = format!("{:.3}", expressiveness.clamp(0.0, 1.0));
 
     // Piper: read text from stdin, write WAV to file
     let mut child = Command::new(&binary)
@@ -21,6 +32,10 @@ pub async fn speak(app: &AppHandle, piper_binary: &str, voice: &str, text: &str)
             voice_path.to_str().unwrap_or(voice),
             "--output_file",
             out_file.to_str().unwrap(),
+            "--length-scale",
+            &speed_str,
+            "--noise-scale",
+            &expr_str,
         ])
         .stdin(Stdio::piped())
         .stdout(Stdio::null())

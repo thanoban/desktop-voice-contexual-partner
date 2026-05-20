@@ -23,6 +23,9 @@ pub struct Settings {
     pub voice_threshold_db: String,
     // Context sharing (M1)
     pub window_context_auto: String,
+    // Voice tone (M1.1)
+    pub voice_speed: String,
+    pub voice_expressiveness: String,
 }
 
 impl Default for Settings {
@@ -40,6 +43,8 @@ impl Default for Settings {
             whisper_model:       String::new(),
             voice_threshold_db:  "-30".into(),
             window_context_auto: "false".into(),
+            voice_speed:          "1.0".into(),
+            voice_expressiveness: "0.667".into(),
         }
     }
 }
@@ -62,7 +67,9 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<Settings, String> {
         whisper_binary:      pairs.get("whisper_binary").cloned().unwrap_or(d.whisper_binary),
         whisper_model:       pairs.get("whisper_model").cloned().unwrap_or(d.whisper_model),
         voice_threshold_db:  pairs.get("voice_threshold_db").cloned().unwrap_or(d.voice_threshold_db),
-        window_context_auto: pairs.get("window_context_auto").cloned().unwrap_or(d.window_context_auto),
+        window_context_auto:  pairs.get("window_context_auto").cloned().unwrap_or(d.window_context_auto),
+        voice_speed:          pairs.get("voice_speed").cloned().unwrap_or(d.voice_speed),
+        voice_expressiveness: pairs.get("voice_expressiveness").cloned().unwrap_or(d.voice_expressiveness),
     })
 }
 

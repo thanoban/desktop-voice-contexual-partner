@@ -40,7 +40,8 @@ pub async fn send_message(
     let distress = safety::check(&content);
 
     // DB work — all sync, no .await held
-    let (session_id, model, endpoint, personality, name, piper_binary, piper_voice) = {
+    let (session_id, model, endpoint, personality, name, piper_binary, piper_voice,
+         voice_speed, voice_expressiveness, window_context_auto) = {
         let conn = state.db.lock().map_err(|e| e.to_string())?;
         let sid = db::ensure_session(&conn).map_err(|e| e.to_string())?;
         db::save_turn(&conn, &sid, "user", &content).map_err(|e| e.to_string())?;
@@ -50,7 +51,10 @@ pub async fn send_message(
         let name     = db::get_setting(&conn, "companion_name").unwrap_or_else(|| "Amy".into());
         let piper    = db::get_setting(&conn, "piper_binary").unwrap_or_default();
         let voice    = db::get_setting(&conn, "piper_voice").unwrap_or_else(|| "en_US-amy-medium".into());
-        (sid, model, endpoint, persona, name, piper, voice)
+        let speed    = db::get_setting(&conn, "voice_speed").unwrap_or_else(|| "1.0".into());
+        let expr     = db::get_setting(&conn, "voice_expressiveness").unwrap_or_else(|| "0.667".into());
+        let ctx_auto = db::get_setting(&conn, "window_context_auto").unwrap_or_else(|| "false".into());
+        (sid, model, endpoint, persona, name, piper, voice, speed, expr, ctx_auto)
     }; // MutexGuard dropped here
 
     // Build recent context
@@ -59,8 +63,31 @@ pub async fn send_message(
         db::get_recent_turns(&conn, &session_id, 20)
     };
 
-    // Inject window context if the user has sharing enabled
-    let context_block = crate::commands::context::build_context_injection(&state);
+    // Build context injection: auto (always-on) or manual sharing
+    let context_block = {
+        let ctx = state.context.lock().map_err(|e| e.to_string())?;
+        let title = if window_context_auto == "true" {
+            // Live detection every message — no user action required
+            crate::context::get_active_window_title()
+        } else if ctx.sharing {
+            ctx.window_title.clone()
+        } else {
+            None
+        };
+        let note = if ctx.sharing { ctx.custom_note.clone() } else { None };
+
+        if title.is_some() || note.is_some() {
+            let mut parts = Vec::new();
+            if let Some(ref t) = title { parts.push(format!("Active window: {}", t)); }
+            if let Some(ref n) = note  { parts.push(format!("User note: {}", n)); }
+            Some(format!(
+                "[CONTEXT — what the user is working on right now]\n{}\n[/CONTEXT]",
+                parts.join("\n")
+            ))
+        } else {
+            None
+        }
+    }; // MutexGuard dropped
 
     let mut system_prompt = personality_prompt(&personality, &name);
     if let Some(ref ctx) = context_block {
@@ -106,13 +133,15 @@ pub async fn send_message(
     }
 
     // Speak via Piper TTS (best-effort, errors are non-fatal)
-    if !piper_binary.is_empty() || true {
-        let app_clone = app.clone();
-        let voice_clone = piper_voice.clone();
+    if !piper_binary.is_empty() {
+        let speed  = voice_speed.parse::<f32>().unwrap_or(1.0);
+        let expr   = voice_expressiveness.parse::<f32>().unwrap_or(0.667);
+        let app_clone    = app.clone();
+        let voice_clone  = piper_voice.clone();
         let binary_clone = piper_binary.clone();
-        let text_clone = final_response.clone();
+        let text_clone   = final_response.clone();
         tokio::spawn(async move {
-            let _ = crate::tts::piper::speak(&app_clone, &binary_clone, &voice_clone, &text_clone).await;
+            let _ = crate::tts::piper::speak(&app_clone, &binary_clone, &voice_clone, &text_clone, speed, expr).await;
         });
     }
 
@@ -124,7 +153,8 @@ pub async fn get_greeting(
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<(), String> {
-    let (session_id, model, endpoint, personality, name, piper_binary, piper_voice) = {
+    let (session_id, model, endpoint, personality, name, piper_binary, piper_voice,
+         voice_speed, voice_expressiveness) = {
         let conn = state.db.lock().map_err(|e| e.to_string())?;
         let sid = db::ensure_session(&conn).map_err(|e| e.to_string())?;
         let model    = db::get_setting(&conn, "model").unwrap_or_else(|| "llama3.2:8b".into());
@@ -133,7 +163,9 @@ pub async fn get_greeting(
         let name     = db::get_setting(&conn, "companion_name").unwrap_or_else(|| "Amy".into());
         let piper    = db::get_setting(&conn, "piper_binary").unwrap_or_default();
         let voice    = db::get_setting(&conn, "piper_voice").unwrap_or_else(|| "en_US-amy-medium".into());
-        (sid, model, endpoint, persona, name, piper, voice)
+        let speed    = db::get_setting(&conn, "voice_speed").unwrap_or_else(|| "1.0".into());
+        let expr     = db::get_setting(&conn, "voice_expressiveness").unwrap_or_else(|| "0.667".into());
+        (sid, model, endpoint, persona, name, piper, voice, speed, expr)
     };
 
     let turns_today = {
@@ -175,9 +207,11 @@ pub async fn get_greeting(
     let _ = app.emit("chat:done", ());
 
     if !piper_binary.is_empty() {
+        let speed = voice_speed.parse::<f32>().unwrap_or(1.0);
+        let expr  = voice_expressiveness.parse::<f32>().unwrap_or(0.667);
         let app_clone = app.clone();
         tokio::spawn(async move {
-            let _ = crate::tts::piper::speak(&app_clone, &piper_binary, &piper_voice, &full_response).await;
+            let _ = crate::tts::piper::speak(&app_clone, &piper_binary, &piper_voice, &full_response, speed, expr).await;
         });
     }
 
@@ -204,11 +238,14 @@ pub async fn speak_text(
     text: String,
     voice: String,
 ) -> Result<(), String> {
-    let piper_binary = {
+    let (piper_binary, speed, expr) = {
         let conn = state.db.lock().map_err(|e| e.to_string())?;
-        db::get_setting(&conn, "piper_binary").unwrap_or_default()
+        let binary = db::get_setting(&conn, "piper_binary").unwrap_or_default();
+        let s = db::get_setting(&conn, "voice_speed").unwrap_or_else(|| "1.0".into());
+        let e = db::get_setting(&conn, "voice_expressiveness").unwrap_or_else(|| "0.667".into());
+        (binary, s.parse::<f32>().unwrap_or(1.0), e.parse::<f32>().unwrap_or(0.667))
     };
-    crate::tts::piper::speak(&app, &piper_binary, &voice, &text)
+    crate::tts::piper::speak(&app, &piper_binary, &voice, &text, speed, expr)
         .await
         .map_err(|e| e.to_string())
 }

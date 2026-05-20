@@ -102,6 +102,7 @@ export function SettingsPanel({ open, onClose }: Props) {
         <Section title="Voice">
           <Label>Voice preset</Label>
           <select
+            aria-label="Voice preset"
             value={settings.piper_voice}
             onChange={(e) => update("piper_voice", e.target.value)}
             style={selectStyle}
@@ -121,10 +122,49 @@ export function SettingsPanel({ open, onClose }: Props) {
           </p>
         </Section>
 
+        {/* Voice Tone */}
+        <Section title="Voice Tone">
+          <Label>Speaking speed</Label>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <input
+              type="range"
+              aria-label="Speaking speed"
+              min="0.5" max="2.0" step="0.05"
+              value={settings.voice_speed}
+              onChange={(e) => update("voice_speed", e.target.value)}
+              style={{ flex: 1, accentColor: "var(--accent)" }}
+            />
+            <span style={{ fontSize: "12px", color: "var(--text-muted)", minWidth: "32px" }}>
+              {parseFloat(settings.voice_speed).toFixed(2)}×
+            </span>
+          </div>
+          <p style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+            0.5 = fast · 1.0 = normal · 2.0 = slow
+          </p>
+          <Label>Expressiveness</Label>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <input
+              type="range"
+              aria-label="Expressiveness"
+              min="0.0" max="1.0" step="0.05"
+              value={settings.voice_expressiveness}
+              onChange={(e) => update("voice_expressiveness", e.target.value)}
+              style={{ flex: 1, accentColor: "var(--accent)" }}
+            />
+            <span style={{ fontSize: "12px", color: "var(--text-muted)", minWidth: "32px" }}>
+              {parseFloat(settings.voice_expressiveness).toFixed(2)}
+            </span>
+          </div>
+          <p style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+            0.0 = flat · 0.67 = default · 1.0 = very expressive
+          </p>
+        </Section>
+
         {/* Voice Input */}
         <Section title="Voice Input">
           <Label>Microphone</Label>
           <select
+            aria-label="Microphone"
             value={settings.audio_input_device}
             onChange={(e) => update("audio_input_device", e.target.value)}
             style={selectStyle}
@@ -149,6 +189,14 @@ export function SettingsPanel({ open, onClose }: Props) {
           <p style={{ fontSize: "11px", color: "var(--text-muted)" }}>
             Download whisper.cpp + ggml-base.en.bin (~141 MB) from github.com/ggerganov/whisper.cpp/releases
           </p>
+          <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "13px", cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={settings.window_context_auto === "true"}
+              onChange={(e) => update("window_context_auto", e.target.checked ? "true" : "false")}
+            />
+            Auto-detect active window (inject into every message)
+          </label>
         </Section>
 
         {/* Model */}
@@ -156,6 +204,7 @@ export function SettingsPanel({ open, onClose }: Props) {
           <Label>Ollama endpoint</Label>
           <div style={{ display: "flex", gap: "6px" }}>
             <input
+              aria-label="Ollama endpoint URL"
               value={localEndpoint}
               onChange={(e) => setLocalEndpoint(e.target.value)}
               onBlur={() => update("endpoint", localEndpoint)}
@@ -165,6 +214,7 @@ export function SettingsPanel({ open, onClose }: Props) {
           <Label>Model</Label>
           {models.length > 0 ? (
             <select
+              aria-label="LLM model"
               value={settings.model}
               onChange={(e) => update("model", e.target.value)}
               style={selectStyle}

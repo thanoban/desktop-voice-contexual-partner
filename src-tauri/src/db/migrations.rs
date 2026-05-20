@@ -62,6 +62,15 @@ pub fn run(conn: &Connection) -> anyhow::Result<()> {
         ")?;
     }
 
+    if version < 3 {
+        conn.execute_batch("
+            INSERT OR IGNORE INTO settings VALUES ('voice_speed',           '1.0');
+            INSERT OR IGNORE INTO settings VALUES ('voice_expressiveness',   '0.667');
+
+            INSERT INTO schema_version VALUES (3);
+        ")?;
+    }
+
     // Future migrations go here as `if version < N { ... }` blocks.
     // Never edit a migration that has already been applied.
 

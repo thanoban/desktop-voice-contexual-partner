@@ -20,6 +20,8 @@ const defaults: Settings = {
   whisper_model: "",
   audio_input_device: "",
   window_context_auto: "false",
+  voice_speed: "1.0",
+  voice_expressiveness: "0.667",
 };
 
 export const useSettingsStore = create<SettingsState>((set) => ({

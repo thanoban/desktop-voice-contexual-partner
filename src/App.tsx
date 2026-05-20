@@ -17,13 +17,18 @@ import {
   onSpeakStart,
   onSpeakEnd,
   onSafetyShow,
+  onContextUpdate,
+  startSharingContext,
+  stopSharingContext,
   getGreeting,
+  type ContextStatus,
 } from "@/lib/tauri";
 
 export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [safetyVisible, setSafetyVisible] = useState(false);
   const [showVoiceSetup, setShowVoiceSetup] = useState(false);
+  const [ctx, setCtx] = useState<ContextStatus>({ sharing: false });
 
   const { settings, load: loadSettings } = useSettingsStore();
   const { appendToken, finalizeStream, setProcessing, setSpeaking, addMessage } = useChatStore();
@@ -52,6 +57,7 @@ export default function App() {
       onSpeakStart(() => setSpeaking(true)),
       onSpeakEnd(() => setSpeaking(false)),
       onSafetyShow(() => setSafetyVisible(true)),
+      onContextUpdate((s) => setCtx(s)),
     ]).then((fns) => {
       unlisteners.push(...fns);
     });
@@ -88,8 +94,25 @@ export default function App() {
         <span style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-muted)" }}>
           {settings.companion_name}
         </span>
-        <div style={{ display: "flex", gap: "8px" }}>
+        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
           <button
+            type="button"
+            onClick={() => ctx.sharing
+              ? stopSharingContext().then(() => setCtx({ sharing: false }))
+              : startSharingContext().then(setCtx)
+            }
+            style={{
+              ...titleBtnStyle,
+              color: ctx.sharing ? "#60a5fa" : "var(--text-muted)",
+              fontSize: "13px",
+            }}
+            aria-label={ctx.sharing ? "Stop sharing window context" : "Share window context"}
+            title={ctx.sharing ? `Sharing: ${ctx.window_title ?? "active window"}` : "Share what you're working on"}
+          >
+            ◉
+          </button>
+          <button
+            type="button"
             onClick={() => setSettingsOpen(true)}
             style={titleBtnStyle}
             aria-label="Settings"

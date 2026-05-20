@@ -82,27 +82,3 @@ pub fn set_context_note(
     Ok(status)
 }
 
-/// Called internally by send_message to build the context injection string.
-pub fn build_context_injection(state: &AppState) -> Option<String> {
-    let ctx = state.context.lock().ok()?;
-    if !ctx.sharing {
-        return None;
-    }
-
-    let mut parts = Vec::new();
-    if let Some(ref title) = ctx.window_title {
-        parts.push(format!("Active window: {}", title));
-    }
-    if let Some(ref note) = ctx.custom_note {
-        parts.push(format!("User note: {}", note));
-    }
-
-    if parts.is_empty() {
-        None
-    } else {
-        Some(format!(
-            "[CONTEXT — what the user is working on]\n{}\n[/CONTEXT]",
-            parts.join("\n")
-        ))
-    }
-}
