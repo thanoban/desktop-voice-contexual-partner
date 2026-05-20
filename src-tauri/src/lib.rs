@@ -216,6 +216,8 @@ pub fn run() {
             commands::setup::check_setup,
             commands::setup::pick_file,
             commands::setup::download_tool,
+            // Windows SAPI voices
+            tts::piper::get_sapi_voices,
             // System
             commands::system::get_ollama_status,
             commands::system::list_models,

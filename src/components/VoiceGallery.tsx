@@ -4,6 +4,7 @@ import {
   checkSetup,
   downloadTool,
   pickFile,
+  getSapiVoices,
   onDownloadProgress,
   onDownloadDone,
   onDownloadError,
@@ -48,9 +49,14 @@ export function VoiceGallery({ onDone }: Props) {
     )
   );
   const [addForm, setAddForm] = useState<{ path: string; label: string } | null>(null);
+  const [sapiVoices, setSapiVoices] = useState<string[]>([]);
 
   const refresh = useCallback(async () => {
     try { setStatus(await checkSetup()); } catch {}
+  }, []);
+
+  useEffect(() => {
+    getSapiVoices().then(setSapiVoices).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -253,6 +259,58 @@ export function VoiceGallery({ onDone }: Props) {
             </div>
           ))}
         </div>
+
+        {/* Windows SAPI voices — shown only when system voices are available */}
+        {sapiVoices.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              Windows Voices
+            </div>
+            <p style={{ fontSize: "11px", color: "var(--text-muted)", lineHeight: 1.5, margin: 0 }}>
+              System voices installed on your PC. Indian English voices (Heera, Ravi) appear here if
+              you have the Windows India language pack installed.
+            </p>
+            {sapiVoices.map((name) => {
+              const key = `sapi:${name}`;
+              const isActive = settings.piper_voice === key;
+              const isIndian = /india|heera|ravi|hindi/i.test(name);
+              return (
+                <div
+                  key={name}
+                  style={{
+                    background: "var(--bg-elevated)",
+                    borderRadius: "10px",
+                    padding: "10px 14px",
+                    border: `1px solid ${isActive ? "var(--accent)" : isIndian ? "rgba(255,153,0,0.3)" : "var(--text-dim)"}`,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                  }}
+                >
+                  <span style={{ fontSize: "16px", flexShrink: 0 }}>{isIndian ? "🇮🇳" : "🖥"}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: "13px", fontWeight: 600, color: isActive ? "var(--accent)" : "var(--text-primary)" }}>
+                      {name}
+                      {isActive && <span style={{ marginLeft: "6px", fontSize: "10px", opacity: 0.8 }}>active</span>}
+                    </div>
+                    <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                      {isIndian ? "Indian English · Windows SAPI" : "Windows SAPI"}
+                    </div>
+                  </div>
+                  {!isActive && (
+                    <button type="button" onClick={() => useCustomVoice(key)} style={primarySmallBtn}>
+                      Use
+                    </button>
+                  )}
+                  {isActive && <span style={{ fontSize: "14px", color: "var(--accent)" }}>✓</span>}
+                </div>
+              );
+            })}
+            <p style={{ fontSize: "11px", color: "var(--text-muted)", lineHeight: 1.5, margin: 0 }}>
+              To add Indian English voices: Windows Settings → Time &amp; Language → Language &amp; Region → Add a language → English (India).
+            </p>
+          </div>
+        )}
 
         {/* Custom voices section */}
         <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>

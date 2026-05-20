@@ -5,9 +5,10 @@ use std::process::{Command, Stdio};
 use tauri::AppHandle;
 use tauri::Emitter;
 
-/// Speaks `text` using Piper TTS.
-/// `speed` — length-scale (1.0 = normal, 0.8 = faster, 1.3 = slower).
-/// `expressiveness` — noise-scale (0.0 = flat, 0.667 = default, 1.0 = very expressive).
+/// Speaks `text` using Piper TTS or Windows SAPI.
+/// If `voice` starts with "sapi:" the remainder is treated as a Windows SAPI
+/// voice name and speech is rendered through System.Speech on Windows.
+/// Otherwise Piper is used.
 pub async fn speak(
     app: &AppHandle,
     piper_binary: &str,
@@ -16,6 +17,10 @@ pub async fn speak(
     speed: f32,
     expressiveness: f32,
 ) -> Result<()> {
+    if let Some(sapi_name) = voice.strip_prefix("sapi:") {
+        return speak_sapi(app, sapi_name, text).await;
+    }
+
     let binary = resolve_binary(piper_binary)?;
     let voice_path = resolve_voice(voice)?;
     let out_file = temp_wav_path();
@@ -25,7 +30,6 @@ pub async fn speak(
     let speed_str = format!("{:.3}", speed.clamp(0.3, 3.0));
     let expr_str  = format!("{:.3}", expressiveness.clamp(0.0, 1.0));
 
-    // Piper: read text from stdin, write WAV to file
     let mut child = Command::new(&binary)
         .args([
             "--model",
@@ -52,13 +56,81 @@ pub async fn speak(
         .wait()
         .map_err(|e| anyhow!("Piper wait failed: {}", e))?;
 
-    // Play the WAV file using the platform's built-in audio player
     play_wav(&out_file)?;
-
     let _ = std::fs::remove_file(&out_file);
     let _ = app.emit("tts:end", ());
     Ok(())
 }
+
+/// Returns the names of all installed Windows SAPI voices.
+/// Returns an empty list on non-Windows platforms.
+#[tauri::command]
+pub fn get_sapi_voices() -> Vec<String> {
+    #[cfg(target_os = "windows")]
+    {
+        let output = Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "Add-Type -AssemblyName System.Speech; \
+                 $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; \
+                 $s.GetInstalledVoices() | ForEach-Object { $_.VoiceInfo.Name }",
+            ])
+            .output();
+        match output {
+            Ok(o) => String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+                .collect(),
+            Err(_) => vec![],
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        vec![]
+    }
+}
+
+// ── SAPI speech ───────────────────────────────────────────────────────────────
+
+#[cfg(target_os = "windows")]
+async fn speak_sapi(app: &AppHandle, voice_name: &str, text: &str) -> Result<()> {
+    let _ = app.emit("tts:start", ());
+    let out_file = temp_wav_path();
+
+    // Single-quote escape for PowerShell ('' = literal ')
+    let safe_name = voice_name.replace('\'', "''");
+    let safe_text = text.replace('\'', "''");
+    let wav_path  = out_file.to_str().unwrap_or("").to_string();
+
+    let script = format!(
+        "Add-Type -AssemblyName System.Speech; \
+         $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; \
+         $s.SelectVoice('{safe_name}'); \
+         $s.SetOutputToWaveFile('{wav_path}'); \
+         $s.Speak('{safe_text}'); \
+         $s.SetOutputToDefaultAudioDevice()"
+    );
+
+    Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+        .status()
+        .map_err(|e| anyhow!("SAPI speak failed: {}", e))?;
+
+    play_wav(&out_file)?;
+    let _ = std::fs::remove_file(&out_file);
+    let _ = app.emit("tts:end", ());
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+async fn speak_sapi(_app: &AppHandle, _voice_name: &str, _text: &str) -> Result<()> {
+    Err(anyhow!("Windows SAPI TTS is only available on Windows"))
+}
+
+// ── Piper helpers ─────────────────────────────────────────────────────────────
 
 fn play_wav(path: &PathBuf) -> Result<()> {
     #[cfg(target_os = "windows")]
@@ -85,7 +157,6 @@ fn play_wav(path: &PathBuf) -> Result<()> {
     }
     #[cfg(target_os = "linux")]
     {
-        // Try aplay first, fall back to paplay
         if Command::new("aplay").arg(path).status().is_err() {
             Command::new("paplay")
                 .arg(path)
@@ -100,7 +171,6 @@ fn resolve_binary(configured: &str) -> Result<String> {
     if !configured.is_empty() {
         return Ok(configured.to_string());
     }
-    // Check if piper is on PATH
     which("piper").ok_or_else(|| {
         anyhow!(
             "Piper TTS binary not found. Configure the path in Settings > Voice, \
@@ -110,13 +180,10 @@ fn resolve_binary(configured: &str) -> Result<String> {
 }
 
 fn resolve_voice(voice_id: &str) -> Result<PathBuf> {
-    // Voice model files should be in app data dir / voices /
-    // For M0, accept either a full path or a bare voice ID
     let p = PathBuf::from(voice_id);
     if p.exists() {
         return Ok(p);
     }
-    // Try alongside the piper binary or in a bundled voices dir
     let voices_dir = voices_directory();
     let candidate = voices_dir.join(format!("{}.onnx", voice_id));
     if candidate.exists() {

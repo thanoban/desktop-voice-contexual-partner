@@ -67,6 +67,9 @@ export const getGreeting = (): Promise<void> =>
 export const speakText = (text: string, voice: string): Promise<void> =>
   invoke("speak_text", { text, voice });
 
+export const getSapiVoices = (): Promise<string[]> =>
+  invoke("get_sapi_voices");
+
 export const stopSpeaking = (): Promise<void> =>
   invoke("stop_speaking");
 

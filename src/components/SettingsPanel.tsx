@@ -129,12 +129,13 @@ export function SettingsPanel({ open, onClose }: Props) {
           <Label>Active voice</Label>
           <div style={{ display: "flex", alignItems: "center", gap: "8px", background: "var(--bg-elevated)", border: "1px solid var(--text-dim)", borderRadius: "6px", padding: "7px 10px" }}>
             <span style={{ flex: 1, fontSize: "13px", color: "var(--text-primary)" }}>
-              {VOICE_CATALOG.find((v) => settings.piper_voice?.includes(v.id))?.label ?? "Custom"}
-              <span style={{ marginLeft: "6px", fontSize: "11px", color: "var(--text-muted)" }}>
-                {VOICE_CATALOG.find((v) => settings.piper_voice?.includes(v.id))
-                  ? `· ${VOICE_CATALOG.find((v) => settings.piper_voice?.includes(v.id))!.accent}`
-                  : ""}
-              </span>
+              {(() => {
+                const v = settings.piper_voice;
+                if (!v) return "None";
+                if (v.startsWith("sapi:")) return v.slice(5);
+                const cat = VOICE_CATALOG.find((c) => v.includes(c.id));
+                return cat ? `${cat.label} · ${cat.accent}` : "Custom";
+              })()}
             </span>
             <button
               type="button"
