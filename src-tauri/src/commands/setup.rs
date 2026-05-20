@@ -40,6 +40,11 @@ const PIPER_VOICE_PRATHAM_JSON: &str =
 const WHISPER_MODEL_URL: &str =
     "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin";
 
+const KOKORO_MODEL_URL: &str =
+    "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx";
+const KOKORO_VOICES_URL: &str =
+    "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices.bin";
+
 // Voice IDs that this app knows how to download
 const KNOWN_VOICE_IDS: &[&str] = &[
     "en_US-amy-medium",
@@ -76,6 +81,13 @@ pub struct SetupStatus {
     pub whisper_model_path: String,
     /// Maps known voice_id → full .onnx path for each voice that is already on disk.
     pub voice_paths: HashMap<String, String>,
+    // Kokoro (M6)
+    pub kokoro_model_ok: bool,
+    pub kokoro_voices_ok: bool,
+    pub python_ok: bool,
+    pub kokoro_lib_ok: bool,
+    pub kokoro_model_path: String,
+    pub kokoro_voices_path: String,
 }
 
 fn tools_dir(app: &AppHandle) -> PathBuf {
@@ -83,6 +95,10 @@ fn tools_dir(app: &AppHandle) -> PathBuf {
         .app_data_dir()
         .unwrap_or_else(|_| PathBuf::from("."))
         .join("tools")
+}
+
+fn kokoro_dir(app: &AppHandle) -> PathBuf {
+    tools_dir(app).join("kokoro")
 }
 
 #[tauri::command]
@@ -125,6 +141,35 @@ pub fn check_setup(app: AppHandle, state: State<'_, AppState>) -> SetupStatus {
     let model_ok = auto_model.exists()
         || (!cfg_model.is_empty() && PathBuf::from(&cfg_model).exists());
 
+    // ── Kokoro ────────────────────────────────────────────────────────────────
+    let kokoro_dir_path = kokoro_dir(&app);
+    let auto_kok_model  = kokoro_dir_path.join("kokoro-v1.0.onnx");
+    let auto_kok_voices = kokoro_dir_path.join("voices.bin");
+
+    let (cfg_kok_model, cfg_kok_voices) = {
+        let conn = state.db.lock().unwrap();
+        (
+            db::get_setting(&conn, "kokoro_model").unwrap_or_default(),
+            db::get_setting(&conn, "kokoro_voices").unwrap_or_default(),
+        )
+    };
+
+    let kok_model_path = if auto_kok_model.exists() {
+        auto_kok_model.to_string_lossy().to_string()
+    } else {
+        cfg_kok_model.clone()
+    };
+    let kok_voices_path = if auto_kok_voices.exists() {
+        auto_kok_voices.to_string_lossy().to_string()
+    } else {
+        cfg_kok_voices.clone()
+    };
+
+    let kok_model_ok  = PathBuf::from(&kok_model_path).exists();
+    let kok_voices_ok = PathBuf::from(&kok_voices_path).exists();
+
+    let (python_ok, kokoro_lib_ok) = crate::tts::kokoro::check_kokoro_available();
+
     SetupStatus {
         piper_ok,
         piper_voice_ok: voice_ok,
@@ -140,6 +185,12 @@ pub fn check_setup(app: AppHandle, state: State<'_, AppState>) -> SetupStatus {
             cfg_model
         },
         voice_paths,
+        kokoro_model_ok:  kok_model_ok,
+        kokoro_voices_ok: kok_voices_ok,
+        python_ok,
+        kokoro_lib_ok,
+        kokoro_model_path:  kok_model_path,
+        kokoro_voices_path: kok_voices_path,
     }
 }
 
@@ -184,6 +235,8 @@ pub async fn download_tool(
         "piper_voice_priyamvada"  => dl_piper_voice_file(&app, "piper_voice_priyamvada",  "hi_IN-priyamvada-medium", PIPER_VOICE_PRIYAMVADA_ONNX,  PIPER_VOICE_PRIYAMVADA_JSON).await,
         "piper_voice_pratham"     => dl_piper_voice_file(&app, "piper_voice_pratham",     "hi_IN-pratham-medium",    PIPER_VOICE_PRATHAM_ONNX,     PIPER_VOICE_PRATHAM_JSON).await,
         "whisper_model_base_en"   => dl_whisper_model(&app, &state).await,
+        "kokoro_model"            => dl_kokoro_model(&app, &state).await,
+        "kokoro_voices"           => dl_kokoro_voices(&app, &state).await,
         other => Err(format!("Unknown tool: {other}")),
     };
     if let Err(ref e) = result {
@@ -337,6 +390,44 @@ async fn dl_whisper_model(
 
     let _ = app.emit("download:done", DownloadDone {
         tool: "whisper_model_base_en".into(),
+        path: path_str.clone(),
+    });
+    Ok(path_str)
+}
+
+async fn dl_kokoro_model(
+    app: &AppHandle,
+    state: &State<'_, AppState>,
+) -> Result<String, String> {
+    let dest = kokoro_dir(app).join("kokoro-v1.0.onnx");
+    fetch_with_progress(app, "kokoro_model", KOKORO_MODEL_URL, &dest).await?;
+
+    let path_str = dest.to_string_lossy().to_string();
+    {
+        let conn = state.db.lock().unwrap();
+        let _ = db::set_setting(&conn, "kokoro_model", &path_str);
+    }
+    let _ = app.emit("download:done", DownloadDone {
+        tool: "kokoro_model".into(),
+        path: path_str.clone(),
+    });
+    Ok(path_str)
+}
+
+async fn dl_kokoro_voices(
+    app: &AppHandle,
+    state: &State<'_, AppState>,
+) -> Result<String, String> {
+    let dest = kokoro_dir(app).join("voices.bin");
+    fetch_with_progress(app, "kokoro_voices", KOKORO_VOICES_URL, &dest).await?;
+
+    let path_str = dest.to_string_lossy().to_string();
+    {
+        let conn = state.db.lock().unwrap();
+        let _ = db::set_setting(&conn, "kokoro_voices", &path_str);
+    }
+    let _ = app.emit("download:done", DownloadDone {
+        tool: "kokoro_voices".into(),
         path: path_str.clone(),
     });
     Ok(path_str)

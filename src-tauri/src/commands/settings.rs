@@ -33,6 +33,9 @@ pub struct Settings {
     pub custom_system_prompt: String,
     // Custom voices (M6): JSON array of {label, path} objects
     pub custom_voices: String,
+    // Kokoro TTS (M6)
+    pub kokoro_model: String,
+    pub kokoro_voices: String,
 }
 
 impl Default for Settings {
@@ -56,6 +59,8 @@ impl Default for Settings {
             embedding_model:       "nomic-embed-text".into(),
             custom_system_prompt:  String::new(),
             custom_voices:         "[]".into(),
+            kokoro_model:          String::new(),
+            kokoro_voices:         String::new(),
         }
     }
 }
@@ -85,6 +90,8 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<Settings, String> {
         custom_system_prompt:    pairs.get("custom_system_prompt").cloned().unwrap_or(d.custom_system_prompt),
         window_context_allowed:  pairs.get("window_context_allowed").cloned().unwrap_or(d.window_context_allowed),
         custom_voices:           pairs.get("custom_voices").cloned().unwrap_or(d.custom_voices),
+        kokoro_model:            pairs.get("kokoro_model").cloned().unwrap_or(d.kokoro_model),
+        kokoro_voices:           pairs.get("kokoro_voices").cloned().unwrap_or(d.kokoro_voices),
     })
 }
 

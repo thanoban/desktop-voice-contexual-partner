@@ -26,6 +26,8 @@ const defaults: Settings = {
   embedding_model: "nomic-embed-text",
   custom_system_prompt: "",
   custom_voices: "[]",
+  kokoro_model: "",
+  kokoro_voices: "",
 };
 
 export const useSettingsStore = create<SettingsState>((set) => ({

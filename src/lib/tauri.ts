@@ -27,6 +27,8 @@ export interface Settings {
   embedding_model: string;
   custom_system_prompt: string;
   custom_voices: string;
+  kokoro_model: string;
+  kokoro_voices: string;
 }
 
 export interface OllamaStatus {
@@ -219,6 +221,13 @@ export interface SetupStatus {
   piper_path: string;
   whisper_model_path: string;
   voice_paths: Record<string, string>;
+  // Kokoro (M6)
+  kokoro_model_ok: boolean;
+  kokoro_voices_ok: boolean;
+  python_ok: boolean;
+  kokoro_lib_ok: boolean;
+  kokoro_model_path: string;
+  kokoro_voices_path: string;
 }
 
 export interface DownloadProgress {

@@ -40,6 +40,21 @@ interface VoiceState {
   error: string | null;
 }
 
+const KOKORO_VOICES = [
+  { id: "af_bella",    label: "Bella",    gender: "F" as const, accent: "US Female",  desc: "Bright & warm" },
+  { id: "af_sarah",    label: "Sarah",    gender: "F" as const, accent: "US Female",  desc: "Conversational" },
+  { id: "af_sky",      label: "Sky",      gender: "F" as const, accent: "US Female",  desc: "Youthful & clear" },
+  { id: "af_nicole",   label: "Nicole",   gender: "F" as const, accent: "US Female",  desc: "Smooth & natural" },
+  { id: "am_adam",     label: "Adam",     gender: "M" as const, accent: "US Male",    desc: "Deep & confident" },
+  { id: "am_michael",  label: "Michael",  gender: "M" as const, accent: "US Male",    desc: "Warm & natural" },
+  { id: "bf_emma",     label: "Emma",     gender: "F" as const, accent: "UK Female",  desc: "Clear & refined" },
+  { id: "bf_isabella", label: "Isabella", gender: "F" as const, accent: "UK Female",  desc: "Elegant & warm" },
+  { id: "bm_george",   label: "George",   gender: "M" as const, accent: "UK Male",    desc: "Authoritative" },
+  { id: "bm_lewis",    label: "Lewis",    gender: "M" as const, accent: "UK Male",    desc: "Casual & natural" },
+];
+
+const KOKORO_FILE_TOOLS = ["kokoro_model", "kokoro_voices"] as const;
+
 export function VoiceGallery({ onDone }: Props) {
   const { settings, update } = useSettingsStore();
   const [status, setStatus] = useState<SetupStatus | null>(null);
@@ -50,6 +65,9 @@ export function VoiceGallery({ onDone }: Props) {
   );
   const [addForm, setAddForm] = useState<{ path: string; label: string } | null>(null);
   const [sapiVoices, setSapiVoices] = useState<string[]>([]);
+  const [kokoroFileState, setKokoroFileState] = useState<Record<string, VoiceState>>(
+    () => Object.fromEntries(KOKORO_FILE_TOOLS.map((t) => [t, { downloading: false, progress: null, error: null }]))
+  );
 
   const refresh = useCallback(async () => {
     try { setStatus(await checkSetup()); } catch {}
@@ -62,25 +80,31 @@ export function VoiceGallery({ onDone }: Props) {
   useEffect(() => {
     refresh();
 
+    const isKokoro = (tool: string) => KOKORO_FILE_TOOLS.includes(tool as typeof KOKORO_FILE_TOOLS[number]);
+
     const subs = Promise.all([
       onDownloadProgress((p) => {
-        if (!VOICE_CATALOG.find((v) => v.toolId === p.tool)) return;
-        setVoiceState((prev) => ({ ...prev, [p.tool]: { ...prev[p.tool], progress: p } }));
+        if (isKokoro(p.tool)) {
+          setKokoroFileState((prev) => ({ ...prev, [p.tool]: { ...prev[p.tool], progress: p } }));
+        } else if (VOICE_CATALOG.find((v) => v.toolId === p.tool)) {
+          setVoiceState((prev) => ({ ...prev, [p.tool]: { ...prev[p.tool], progress: p } }));
+        }
       }),
       onDownloadDone(async (d) => {
-        if (!VOICE_CATALOG.find((v) => v.toolId === d.tool)) return;
-        setVoiceState((prev) => ({
-          ...prev,
-          [d.tool]: { downloading: false, progress: null, error: null },
-        }));
-        await refresh();
+        if (isKokoro(d.tool)) {
+          setKokoroFileState((prev) => ({ ...prev, [d.tool]: { downloading: false, progress: null, error: null } }));
+          await refresh();
+        } else if (VOICE_CATALOG.find((v) => v.toolId === d.tool)) {
+          setVoiceState((prev) => ({ ...prev, [d.tool]: { downloading: false, progress: null, error: null } }));
+          await refresh();
+        }
       }),
       onDownloadError((d) => {
-        if (!VOICE_CATALOG.find((v) => v.toolId === d.tool)) return;
-        setVoiceState((prev) => ({
-          ...prev,
-          [d.tool]: { ...prev[d.tool], downloading: false, error: d.error, progress: null },
-        }));
+        if (isKokoro(d.tool)) {
+          setKokoroFileState((prev) => ({ ...prev, [d.tool]: { ...prev[d.tool], downloading: false, error: d.error, progress: null } }));
+        } else if (VOICE_CATALOG.find((v) => v.toolId === d.tool)) {
+          setVoiceState((prev) => ({ ...prev, [d.tool]: { ...prev[d.tool], downloading: false, error: d.error, progress: null } }));
+        }
       }),
     ]);
 
@@ -88,11 +112,14 @@ export function VoiceGallery({ onDone }: Props) {
   }, [refresh]);
 
   const download = async (toolId: string) => {
-    setVoiceState((prev) => ({ ...prev, [toolId]: { downloading: true, progress: null, error: null } }));
+    const setter = KOKORO_FILE_TOOLS.includes(toolId as typeof KOKORO_FILE_TOOLS[number])
+      ? (fn: (prev: Record<string, VoiceState>) => Record<string, VoiceState>) => setKokoroFileState(fn)
+      : (fn: (prev: Record<string, VoiceState>) => Record<string, VoiceState>) => setVoiceState(fn);
+    setter((prev) => ({ ...prev, [toolId]: { downloading: true, progress: null, error: null } }));
     try {
       await downloadTool(toolId);
     } catch (e) {
-      setVoiceState((prev) => ({ ...prev, [toolId]: { ...prev[toolId], downloading: false, error: String(e) } }));
+      setter((prev) => ({ ...prev, [toolId]: { ...prev[toolId], downloading: false, error: String(e) } }));
     }
   };
 
@@ -311,6 +338,129 @@ export function VoiceGallery({ onDone }: Props) {
             </p>
           </div>
         )}
+
+        {/* Kokoro voices section */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+            Kokoro Voices <span style={{ fontSize: "10px", fontWeight: 400, color: "#a855f7", textTransform: "none", letterSpacing: 0 }}>neural · high quality</span>
+          </div>
+          <p style={{ fontSize: "11px", color: "var(--text-muted)", lineHeight: 1.5, margin: 0 }}>
+            Kokoro is a high-quality neural TTS model that runs locally. Requires Python and{" "}
+            <code style={{ fontSize: "10px", background: "var(--bg-elevated)", padding: "1px 4px", borderRadius: "3px" }}>pip install kokoro-onnx</code>.
+          </p>
+
+          {/* Step 1 — model files */}
+          {(["kokoro_model", "kokoro_voices"] as const).map((toolId) => {
+            const ks = kokoroFileState[toolId];
+            const isModel = toolId === "kokoro_model";
+            const ok = isModel ? !!status?.kokoro_model_ok : !!status?.kokoro_voices_ok;
+            const pct = ks.progress && ks.progress.total > 0
+              ? Math.round((ks.progress.downloaded / ks.progress.total) * 100)
+              : null;
+            return (
+              <div key={toolId} style={{ background: "var(--bg-elevated)", borderRadius: "8px", padding: "10px 14px", border: `1px solid ${ok ? "rgba(167,139,250,0.3)" : "var(--text-dim)"}`, display: "flex", flexDirection: "column", gap: "6px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <span style={{ fontSize: "15px" }}>{ok ? "✅" : "📦"}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: "12px", fontWeight: 600, color: ok ? "var(--accent)" : "var(--text-primary)" }}>
+                      {isModel ? "kokoro-v1.0.onnx" : "voices.bin"}
+                      <span style={{ marginLeft: "6px", fontSize: "10px", fontWeight: 400, color: "var(--text-muted)" }}>
+                        {isModel ? "~82 MB" : "~29 MB"}
+                      </span>
+                    </div>
+                  </div>
+                  {!ok && !ks.downloading && (
+                    <button type="button" onClick={() => download(toolId)} style={secondarySmallBtn}>Download</button>
+                  )}
+                  {ks.downloading && (
+                    <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                      {pct != null ? `${pct}%` : "…"}
+                    </span>
+                  )}
+                </div>
+                {ks.downloading && (
+                  <div style={{ height: "3px", borderRadius: "2px", background: "var(--text-dim)", overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: pct != null ? `${pct}%` : "20%", background: "#a855f7", borderRadius: "2px", transition: "width 0.2s" }} />
+                  </div>
+                )}
+                {ks.error && <div style={{ fontSize: "11px", color: "var(--error)" }}>{ks.error}</div>}
+              </div>
+            );
+          })}
+
+          {/* Step 2 — Python status */}
+          <div style={{ fontSize: "11px", color: "var(--text-muted)", display: "flex", gap: "12px", flexWrap: "wrap" }}>
+            <span>{status?.python_ok ? "✅ Python found" : "❌ Python not found"}</span>
+            <span>{status?.kokoro_lib_ok ? "✅ kokoro-onnx installed" : "❌ kokoro-onnx not installed"}</span>
+          </div>
+          {status?.python_ok && !status?.kokoro_lib_ok && (
+            <p style={{ fontSize: "11px", color: "var(--text-muted)", margin: 0 }}>
+              Run in terminal:{" "}
+              <code style={{ fontSize: "10px", background: "var(--bg-elevated)", padding: "2px 5px", borderRadius: "3px" }}>pip install kokoro-onnx</code>
+            </p>
+          )}
+          {!status?.python_ok && (
+            <p style={{ fontSize: "11px", color: "var(--text-muted)", margin: 0 }}>
+              Install Python from <a href="https://python.org" target="_blank" rel="noreferrer noopener" style={{ color: "var(--accent)" }}>python.org</a>, then run{" "}
+              <code style={{ fontSize: "10px", background: "var(--bg-elevated)", padding: "2px 5px", borderRadius: "3px" }}>pip install kokoro-onnx</code>.
+            </p>
+          )}
+
+          {/* Kokoro voice list — shown only once both files are ready */}
+          {status?.kokoro_model_ok && status?.kokoro_voices_ok && status?.kokoro_lib_ok && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginTop: "4px" }}>
+              {KOKORO_VOICES.map((kv) => {
+                const key = `kokoro:${kv.id}`;
+                const isActive = settings.piper_voice === key;
+                return (
+                  <div
+                    key={kv.id}
+                    style={{
+                      background: "var(--bg-elevated)",
+                      borderRadius: "10px",
+                      padding: "10px 14px",
+                      border: `1px solid ${isActive ? "#a855f7" : "rgba(168,85,247,0.2)"}`,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "10px",
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: "26px", height: "26px", borderRadius: "50%", flexShrink: 0,
+                        background: kv.gender === "F" ? "rgba(168,85,247,0.15)" : "rgba(59,130,246,0.15)",
+                        border: `1px solid ${kv.gender === "F" ? "rgba(168,85,247,0.4)" : "rgba(59,130,246,0.4)"}`,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: "12px",
+                        color: kv.gender === "F" ? "#c084fc" : "rgba(59,130,246,0.9)",
+                      }}
+                    >
+                      {kv.gender === "F" ? "♀" : "♂"}
+                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: "13px", fontWeight: 600, color: isActive ? "#a855f7" : "var(--text-primary)" }}>
+                        {kv.label}
+                        {isActive && <span style={{ marginLeft: "6px", fontSize: "10px", opacity: 0.8 }}>active</span>}
+                      </div>
+                      <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>{kv.accent} · {kv.desc}</div>
+                    </div>
+                    {!isActive && (
+                      <button type="button" onClick={() => { update("piper_voice", key); onDone(); }} style={{ ...primarySmallBtn, background: "#a855f7" }}>Use</button>
+                    )}
+                    {isActive && <span style={{ fontSize: "14px", color: "#a855f7" }}>✓</span>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Teaser when model ready but kokoro_onnx not installed */}
+          {status?.kokoro_model_ok && status?.kokoro_voices_ok && !status?.kokoro_lib_ok && (
+            <p style={{ fontSize: "11px", color: "var(--text-muted)", margin: 0 }}>
+              Model files ready — install kokoro-onnx to unlock voices above.
+            </p>
+          )}
+        </div>
 
         {/* Custom voices section */}
         <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>

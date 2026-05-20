@@ -63,7 +63,8 @@ pub async fn send_message(
 
     // DB work — all sync, no .await held
     let (session_id, model, endpoint, personality, name, piper_binary, piper_voice,
-         voice_speed, voice_expressiveness, window_context_auto, embedding_model, custom_system_prompt) = {
+         voice_speed, voice_expressiveness, window_context_auto, embedding_model,
+         custom_system_prompt, kokoro_model, kokoro_voices) = {
         let conn = state.db.lock().map_err(|e| e.to_string())?;
         let sid = db::ensure_session(&conn).map_err(|e| e.to_string())?;
         db::save_turn(&conn, &sid, "user", &content).map_err(|e| e.to_string())?;
@@ -78,7 +79,10 @@ pub async fn send_message(
         let ctx_auto    = db::get_setting(&conn, "window_context_auto").unwrap_or_else(|| "false".into());
         let emb_mdl     = db::get_setting(&conn, "embedding_model").unwrap_or_else(|| "nomic-embed-text".into());
         let custom_sys  = db::get_setting(&conn, "custom_system_prompt").unwrap_or_default();
-        (sid, model, endpoint, persona, name, piper, voice, speed, expr, ctx_auto, emb_mdl, custom_sys)
+        let kok_model   = db::get_setting(&conn, "kokoro_model").unwrap_or_default();
+        let kok_voices  = db::get_setting(&conn, "kokoro_voices").unwrap_or_default();
+        (sid, model, endpoint, persona, name, piper, voice, speed, expr, ctx_auto, emb_mdl,
+         custom_sys, kok_model, kok_voices)
     }; // MutexGuard dropped here
 
     // Build recent context
@@ -230,16 +234,21 @@ pub async fn send_message(
         });
     }
 
-    // Speak via Piper TTS (best-effort, errors are non-fatal)
-    if !piper_binary.is_empty() {
+    // Speak TTS — fires for piper, sapi:, or kokoro: voices (best-effort, non-fatal)
+    if !piper_voice.is_empty() {
         let speed  = voice_speed.parse::<f32>().unwrap_or(1.0);
         let expr   = voice_expressiveness.parse::<f32>().unwrap_or(0.667);
         let app_clone    = app.clone();
         let voice_clone  = piper_voice.clone();
         let binary_clone = piper_binary.clone();
         let text_clone   = final_response.clone();
+        let kok_m = kokoro_model.clone();
+        let kok_v = kokoro_voices.clone();
         tokio::spawn(async move {
-            let _ = crate::tts::piper::speak(&app_clone, &binary_clone, &voice_clone, &text_clone, speed, expr).await;
+            let _ = crate::tts::piper::speak(
+                &app_clone, &binary_clone, &voice_clone, &text_clone,
+                speed, expr, &kok_m, &kok_v,
+            ).await;
         });
     }
 
@@ -252,7 +261,7 @@ pub async fn get_greeting(
     app: AppHandle,
 ) -> Result<(), String> {
     let (session_id, model, endpoint, personality, name, piper_binary, piper_voice,
-         voice_speed, voice_expressiveness) = {
+         voice_speed, voice_expressiveness, kokoro_model, kokoro_voices) = {
         let conn = state.db.lock().map_err(|e| e.to_string())?;
         let sid = db::ensure_session(&conn).map_err(|e| e.to_string())?;
         let model    = db::get_setting(&conn, "model").unwrap_or_else(|| "llama3.2:8b".into());
@@ -263,7 +272,9 @@ pub async fn get_greeting(
         let voice    = db::get_setting(&conn, "piper_voice").unwrap_or_else(|| "en_US-amy-medium".into());
         let speed    = db::get_setting(&conn, "voice_speed").unwrap_or_else(|| "1.0".into());
         let expr     = db::get_setting(&conn, "voice_expressiveness").unwrap_or_else(|| "0.667".into());
-        (sid, model, endpoint, persona, name, piper, voice, speed, expr)
+        let kok_m    = db::get_setting(&conn, "kokoro_model").unwrap_or_default();
+        let kok_v    = db::get_setting(&conn, "kokoro_voices").unwrap_or_default();
+        (sid, model, endpoint, persona, name, piper, voice, speed, expr, kok_m, kok_v)
     };
 
     let turns_today = {
@@ -304,12 +315,15 @@ pub async fn get_greeting(
 
     let _ = app.emit("chat:done", ());
 
-    if !piper_binary.is_empty() {
+    if !piper_voice.is_empty() {
         let speed = voice_speed.parse::<f32>().unwrap_or(1.0);
         let expr  = voice_expressiveness.parse::<f32>().unwrap_or(0.667);
         let app_clone = app.clone();
         tokio::spawn(async move {
-            let _ = crate::tts::piper::speak(&app_clone, &piper_binary, &piper_voice, &full_response, speed, expr).await;
+            let _ = crate::tts::piper::speak(
+                &app_clone, &piper_binary, &piper_voice, &full_response,
+                speed, expr, &kokoro_model, &kokoro_voices,
+            ).await;
         });
     }
 
@@ -336,14 +350,16 @@ pub async fn speak_text(
     text: String,
     voice: String,
 ) -> Result<(), String> {
-    let (piper_binary, speed, expr) = {
+    let (piper_binary, speed, expr, kokoro_model, kokoro_voices) = {
         let conn = state.db.lock().map_err(|e| e.to_string())?;
         let binary = db::get_setting(&conn, "piper_binary").unwrap_or_default();
         let s = db::get_setting(&conn, "voice_speed").unwrap_or_else(|| "1.0".into());
         let e = db::get_setting(&conn, "voice_expressiveness").unwrap_or_else(|| "0.667".into());
-        (binary, s.parse::<f32>().unwrap_or(1.0), e.parse::<f32>().unwrap_or(0.667))
+        let km = db::get_setting(&conn, "kokoro_model").unwrap_or_default();
+        let kv = db::get_setting(&conn, "kokoro_voices").unwrap_or_default();
+        (binary, s.parse::<f32>().unwrap_or(1.0), e.parse::<f32>().unwrap_or(0.667), km, kv)
     };
-    crate::tts::piper::speak(&app, &piper_binary, &voice, &text, speed, expr)
+    crate::tts::piper::speak(&app, &piper_binary, &voice, &text, speed, expr, &kokoro_model, &kokoro_voices)
         .await
         .map_err(|e| e.to_string())
 }

@@ -133,6 +133,17 @@ export function SettingsPanel({ open, onClose }: Props) {
                 const v = settings.piper_voice;
                 if (!v) return "None";
                 if (v.startsWith("sapi:")) return v.slice(5);
+                if (v.startsWith("kokoro:")) {
+                  const id = v.slice(7);
+                  const labels: Record<string, string> = {
+                    af_bella: "Bella · US Female", af_sarah: "Sarah · US Female",
+                    af_sky: "Sky · US Female", af_nicole: "Nicole · US Female",
+                    am_adam: "Adam · US Male", am_michael: "Michael · US Male",
+                    bf_emma: "Emma · UK Female", bf_isabella: "Isabella · UK Female",
+                    bm_george: "George · UK Male", bm_lewis: "Lewis · UK Male",
+                  };
+                  return `Kokoro · ${labels[id] ?? id}`;
+                }
                 const cat = VOICE_CATALOG.find((c) => v.includes(c.id));
                 return cat ? `${cat.label} · ${cat.accent}` : "Custom";
               })()}

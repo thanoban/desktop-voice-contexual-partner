@@ -5,10 +5,10 @@ use std::process::{Command, Stdio};
 use tauri::AppHandle;
 use tauri::Emitter;
 
-/// Speaks `text` using Piper TTS or Windows SAPI.
-/// If `voice` starts with "sapi:" the remainder is treated as a Windows SAPI
-/// voice name and speech is rendered through System.Speech on Windows.
-/// Otherwise Piper is used.
+/// Speaks `text` using the appropriate TTS engine based on the `voice` prefix:
+///   `sapi:<Name>`   → Windows System.Speech (SAPI)
+///   `kokoro:<id>`   → Kokoro TTS via Python subprocess
+///   anything else   → Piper TTS subprocess
 pub async fn speak(
     app: &AppHandle,
     piper_binary: &str,
@@ -16,14 +16,19 @@ pub async fn speak(
     text: &str,
     speed: f32,
     expressiveness: f32,
+    kokoro_model: &str,
+    kokoro_voices: &str,
 ) -> Result<()> {
     if let Some(sapi_name) = voice.strip_prefix("sapi:") {
         return speak_sapi(app, sapi_name, text).await;
     }
+    if let Some(kokoro_id) = voice.strip_prefix("kokoro:") {
+        return super::kokoro::speak_kokoro(app, kokoro_model, kokoro_voices, kokoro_id, text, speed).await;
+    }
 
     let binary = resolve_binary(piper_binary)?;
     let voice_path = resolve_voice(voice)?;
-    let out_file = temp_wav_path();
+    let out_file = super::temp_wav_path();
 
     let _ = app.emit("tts:start", ());
 
@@ -56,7 +61,7 @@ pub async fn speak(
         .wait()
         .map_err(|e| anyhow!("Piper wait failed: {}", e))?;
 
-    play_wav(&out_file)?;
+    super::play_wav(&out_file)?;
     let _ = std::fs::remove_file(&out_file);
     let _ = app.emit("tts:end", ());
     Ok(())
@@ -98,9 +103,8 @@ pub fn get_sapi_voices() -> Vec<String> {
 #[cfg(target_os = "windows")]
 async fn speak_sapi(app: &AppHandle, voice_name: &str, text: &str) -> Result<()> {
     let _ = app.emit("tts:start", ());
-    let out_file = temp_wav_path();
+    let out_file = super::temp_wav_path();
 
-    // Single-quote escape for PowerShell ('' = literal ')
     let safe_name = voice_name.replace('\'', "''");
     let safe_text = text.replace('\'', "''");
     let wav_path  = out_file.to_str().unwrap_or("").to_string();
@@ -119,7 +123,7 @@ async fn speak_sapi(app: &AppHandle, voice_name: &str, text: &str) -> Result<()>
         .status()
         .map_err(|e| anyhow!("SAPI speak failed: {}", e))?;
 
-    play_wav(&out_file)?;
+    super::play_wav(&out_file)?;
     let _ = std::fs::remove_file(&out_file);
     let _ = app.emit("tts:end", ());
     Ok(())
@@ -131,41 +135,6 @@ async fn speak_sapi(_app: &AppHandle, _voice_name: &str, _text: &str) -> Result<
 }
 
 // ── Piper helpers ─────────────────────────────────────────────────────────────
-
-fn play_wav(path: &PathBuf) -> Result<()> {
-    #[cfg(target_os = "windows")]
-    {
-        Command::new("powershell")
-            .args([
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                &format!(
-                    "(New-Object Media.SoundPlayer '{}').PlaySync()",
-                    path.display()
-                ),
-            ])
-            .status()
-            .map_err(|e| anyhow!("WAV playback failed: {}", e))?;
-    }
-    #[cfg(target_os = "macos")]
-    {
-        Command::new("afplay")
-            .arg(path)
-            .status()
-            .map_err(|e| anyhow!("afplay failed: {}", e))?;
-    }
-    #[cfg(target_os = "linux")]
-    {
-        if Command::new("aplay").arg(path).status().is_err() {
-            Command::new("paplay")
-                .arg(path)
-                .status()
-                .map_err(|e| anyhow!("Audio playback failed: {}", e))?;
-        }
-    }
-    Ok(())
-}
 
 fn resolve_binary(configured: &str) -> Result<String> {
     if !configured.is_empty() {
@@ -202,16 +171,6 @@ fn voices_directory() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
         .join("VoicePartner")
         .join("voices")
-}
-
-fn temp_wav_path() -> PathBuf {
-    std::env::temp_dir().join(format!(
-        "vp_tts_{}.wav",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis()
-    ))
 }
 
 fn which(name: &str) -> Option<String> {
