@@ -1,0 +1,57 @@
+[package]
+name = "voicepartner"
+version = "0.1.0"
+edition = "2021"
+description = "Local-first voice companion desktop app"
+license = "AGPL-3.0"
+
+[lib]
+name = "voicepartner_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# Tauri core
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-shell = "2"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+futures-util = "0.3"
+
+# HTTP (Ollama client)
+reqwest = { version = "0.12", features = ["json", "stream"] }
+
+# Database
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Utilities
+uuid = { version = "1", features = ["v4"] }
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# OS keychain (for DB key in M5)
+keyring = "3"
+
+# Platform dirs (voice model path resolution)
+dirs-next = "2"
+
+[profile.dev]
+incremental = true
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

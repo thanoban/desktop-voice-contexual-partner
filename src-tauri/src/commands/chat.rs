@@ -1,0 +1,206 @@
+use crate::db;
+use crate::llm::client::ChatMessage;
+use crate::safety;
+use crate::AppState;
+use tauri::{AppHandle, Emitter, State};
+
+fn personality_prompt(preset: &str, name: &str) -> String {
+    let tone = match preset {
+        "gentle" => "You are warm, patient, and gently encouraging. You notice how the user is \
+                     feeling and respond with care. You're present and attentive.",
+        "playful" => "You are witty, light-hearted, and fun. You bring levity to conversations \
+                      without being flippant. You enjoy wordplay and gentle humour.",
+        "calm" => "You are steady, measured, and quietly supportive. You speak with unhurried \
+                   clarity. You are a grounding presence.",
+        "energetic" => "You are enthusiastic and motivating. You celebrate small wins with \
+                        genuine excitement and help the user feel capable.",
+        _ => "You are a warm and thoughtful companion.",
+    };
+
+    format!(
+        "You are {name}, a local AI companion running entirely on this user's machine. \
+         {tone} \
+         Keep responses conversational and concise — like a friend, not a lecture. \
+         Do not use bullet points unless specifically asked. \
+         Do not start responses with 'Certainly!' or 'Of course!'. \
+         Speak naturally and warmly. \
+         You have no access to the internet and no knowledge beyond your training data. \
+         You are NOT a therapist. If the user seems distressed, acknowledge their feelings \
+         and gently encourage real human support."
+    )
+}
+
+#[tauri::command]
+pub async fn send_message(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    content: String,
+) -> Result<(), String> {
+    // Check distress before anything else
+    let distress = safety::check(&content);
+
+    // DB work — all sync, no .await held
+    let (session_id, model, endpoint, personality, name, piper_binary, piper_voice) = {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        let sid = db::ensure_session(&conn).map_err(|e| e.to_string())?;
+        db::save_turn(&conn, &sid, "user", &content).map_err(|e| e.to_string())?;
+        let model    = db::get_setting(&conn, "model").unwrap_or_else(|| "llama3.2:8b".into());
+        let endpoint = db::get_setting(&conn, "endpoint").unwrap_or_else(|| "http://localhost:11434".into());
+        let persona  = db::get_setting(&conn, "personality").unwrap_or_else(|| "gentle".into());
+        let name     = db::get_setting(&conn, "companion_name").unwrap_or_else(|| "Amy".into());
+        let piper    = db::get_setting(&conn, "piper_binary").unwrap_or_default();
+        let voice    = db::get_setting(&conn, "piper_voice").unwrap_or_else(|| "en_US-amy-medium".into());
+        (sid, model, endpoint, persona, name, piper, voice)
+    }; // MutexGuard dropped here
+
+    // Build recent context
+    let recent_turns = {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        db::get_recent_turns(&conn, &session_id, 20)
+    };
+
+    let system_prompt = personality_prompt(&personality, &name);
+    let mut messages: Vec<ChatMessage> = vec![ChatMessage {
+        role: "system".into(),
+        content: system_prompt,
+    }];
+    for (role, text) in &recent_turns {
+        messages.push(ChatMessage { role: role.clone(), content: text.clone() });
+    }
+
+    // Stream from Ollama
+    let full_response = crate::llm::client::stream_chat(&app, &endpoint, &model, messages)
+        .await
+        .map_err(|e| {
+            let _ = app.emit("chat:error", e.to_string());
+            e.to_string()
+        })?;
+
+    // Append safety suffix if needed
+    let final_response = if let Some(suffix) = safety::companion_suffix(distress) {
+        format!("{}{}", full_response, suffix)
+    } else {
+        full_response.clone()
+    };
+
+    // Save assistant turn
+    {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        db::save_turn(&conn, &session_id, "assistant", &final_response)
+            .map_err(|e| e.to_string())?;
+    }
+
+    let _ = app.emit("chat:done", ());
+
+    // Emit safety panel signal if distress detected
+    if distress != safety::DistressLevel::None {
+        let _ = app.emit("safety:show", ());
+    }
+
+    // Speak via Piper TTS (best-effort, errors are non-fatal)
+    if !piper_binary.is_empty() || true {
+        let app_clone = app.clone();
+        let voice_clone = piper_voice.clone();
+        let binary_clone = piper_binary.clone();
+        let text_clone = final_response.clone();
+        tokio::spawn(async move {
+            let _ = crate::tts::piper::speak(&app_clone, &binary_clone, &voice_clone, &text_clone).await;
+        });
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_greeting(
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<(), String> {
+    let (session_id, model, endpoint, personality, name, piper_binary, piper_voice) = {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        let sid = db::ensure_session(&conn).map_err(|e| e.to_string())?;
+        let model    = db::get_setting(&conn, "model").unwrap_or_else(|| "llama3.2:8b".into());
+        let endpoint = db::get_setting(&conn, "endpoint").unwrap_or_else(|| "http://localhost:11434".into());
+        let persona  = db::get_setting(&conn, "personality").unwrap_or_else(|| "gentle".into());
+        let name     = db::get_setting(&conn, "companion_name").unwrap_or_else(|| "Amy".into());
+        let piper    = db::get_setting(&conn, "piper_binary").unwrap_or_default();
+        let voice    = db::get_setting(&conn, "piper_voice").unwrap_or_else(|| "en_US-amy-medium".into());
+        (sid, model, endpoint, persona, name, piper, voice)
+    };
+
+    let turns_today = {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        db::get_recent_turns(&conn, &session_id, 1)
+    };
+
+    let greeting_instruction = if turns_today.is_empty() {
+        "Send a brief, warm greeting to the user — just one or two sentences. \
+         Be natural, not overly cheerful. Don't ask multiple questions at once."
+    } else {
+        "Welcome the user back with one warm sentence. Keep it short."
+    };
+
+    let messages = vec![
+        ChatMessage {
+            role: "system".into(),
+            content: personality_prompt(&personality, &name),
+        },
+        ChatMessage {
+            role: "user".into(),
+            content: greeting_instruction.into(),
+        },
+    ];
+
+    let full_response = crate::llm::client::stream_chat(&app, &endpoint, &model, messages)
+        .await
+        .map_err(|e| {
+            let _ = app.emit("chat:error", e.to_string());
+            e.to_string()
+        })?;
+
+    {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        db::save_turn(&conn, &session_id, "assistant", &full_response)
+            .map_err(|e| e.to_string())?;
+    }
+
+    let _ = app.emit("chat:done", ());
+
+    if !piper_binary.is_empty() {
+        let app_clone = app.clone();
+        tokio::spawn(async move {
+            let _ = crate::tts::piper::speak(&app_clone, &piper_binary, &piper_voice, &full_response).await;
+        });
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn start_new_session(state: State<'_, AppState>) -> Result<String, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::ensure_session(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn stop_speaking() -> Result<(), String> {
+    // In M0 the subprocess-based TTS doesn't support mid-stream interrupt.
+    // CPAL-based interrupt arrives in M1.
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn speak_text(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    text: String,
+    voice: String,
+) -> Result<(), String> {
+    let piper_binary = {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        db::get_setting(&conn, "piper_binary").unwrap_or_default()
+    };
+    crate::tts::piper::speak(&app, &piper_binary, &voice, &text)
+        .await
+        .map_err(|e| e.to_string())
+}

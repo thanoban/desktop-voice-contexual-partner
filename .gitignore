@@ -1,0 +1,35 @@
+# Node
+node_modules/
+dist/
+.pnpm-store/
+
+# Rust / Tauri
+src-tauri/target/
+src-tauri/gen/
+
+# Environment
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# App data (never commit user data)
+*.db
+*.db-shm
+*.db-wal
+
+# Model weights (large binary files)
+*.bin
+*.onnx
+*.gguf
+
+# Logs
+*.log
