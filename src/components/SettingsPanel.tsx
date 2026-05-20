@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useOllamaStore } from "@/store/ollamaStore";
+import { getAudioDevices, type AudioDevice } from "@/lib/tauri";
 
 const PERSONALITIES = [
   { id: "gentle",    label: "Gentle",    desc: "Warm, patient, softly encouraging" },
@@ -25,9 +26,15 @@ export function SettingsPanel({ open, onClose }: Props) {
   const { settings, update, load } = useSettingsStore();
   const models = useOllamaStore((s) => s.models);
   const [localEndpoint, setLocalEndpoint] = useState(settings.endpoint);
+  const [audioDevices, setAudioDevices] = useState<AudioDevice[]>([]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setLocalEndpoint(settings.endpoint); }, [settings.endpoint]);
+  useEffect(() => {
+    if (open) {
+      getAudioDevices().then(setAudioDevices).catch(() => null);
+    }
+  }, [open]);
 
   if (!open) return null;
 
@@ -111,6 +118,36 @@ export function SettingsPanel({ open, onClose }: Props) {
           />
           <p style={{ fontSize: "11px", color: "var(--text-muted)" }}>
             Leave empty if piper is on your PATH. Voice cloning (XTTS-v2) arrives in M6.
+          </p>
+        </Section>
+
+        {/* Voice Input */}
+        <Section title="Voice Input">
+          <Label>Microphone</Label>
+          <select
+            value={settings.audio_input_device}
+            onChange={(e) => update("audio_input_device", e.target.value)}
+            style={selectStyle}
+          >
+            <option value="">System default</option>
+            {audioDevices.map((d) => (
+              <option key={d.name} value={d.name}>{d.name}{d.is_default ? " (default)" : ""}</option>
+            ))}
+          </select>
+          <Label>whisper.cpp binary path</Label>
+          <Input
+            value={settings.whisper_binary}
+            onChange={(v) => update("whisper_binary", v)}
+            placeholder="C:\tools\whisper\main.exe"
+          />
+          <Label>Whisper model file (.bin)</Label>
+          <Input
+            value={settings.whisper_model}
+            onChange={(v) => update("whisper_model", v)}
+            placeholder="C:\tools\whisper\models\ggml-base.en.bin"
+          />
+          <p style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+            Download whisper.cpp + ggml-base.en.bin (~141 MB) from github.com/ggerganov/whisper.cpp/releases
           </p>
         </Section>
 

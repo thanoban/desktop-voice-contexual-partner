@@ -5,6 +5,7 @@ import { VoiceVisualizer } from "@/components/VoiceVisualizer";
 import { StatusBar } from "@/components/StatusBar";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { SafetyPanel } from "@/components/SafetyPanel";
+import { ModelSetupPanel } from "@/components/ModelSetupPanel";
 import { Onboarding } from "@/components/Onboarding";
 import { useChatStore } from "@/store/chatStore";
 import { useSettingsStore } from "@/store/settingsStore";
@@ -15,12 +16,14 @@ import {
   onChatError,
   onSpeakStart,
   onSpeakEnd,
+  onSafetyShow,
   getGreeting,
 } from "@/lib/tauri";
 
 export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [safetyVisible, setSafetyVisible] = useState(false);
+  const [showVoiceSetup, setShowVoiceSetup] = useState(false);
 
   const { settings, load: loadSettings } = useSettingsStore();
   const { appendToken, finalizeStream, setProcessing, setSpeaking, addMessage } = useChatStore();
@@ -48,6 +51,7 @@ export default function App() {
       }),
       onSpeakStart(() => setSpeaking(true)),
       onSpeakEnd(() => setSpeaking(false)),
+      onSafetyShow(() => setSafetyVisible(true)),
     ]).then((fns) => {
       unlisteners.push(...fns);
     });
@@ -114,7 +118,11 @@ export default function App() {
           background: "var(--bg-surface)",
         }}
       >
-        <VoiceButton disabled={ollamaStatus !== "connected"} />
+        <VoiceButton
+          disabled={ollamaStatus !== "connected"}
+          voiceReady={!!settings.whisper_binary}
+          onNeedsSetup={() => setShowVoiceSetup(true)}
+        />
       </div>
 
       {/* Status bar */}
@@ -123,6 +131,9 @@ export default function App() {
       {/* Overlays */}
       <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <SafetyPanel visible={safetyVisible} onDismiss={() => setSafetyVisible(false)} />
+      {showVoiceSetup && (
+        <ModelSetupPanel onDone={() => setShowVoiceSetup(false)} />
+      )}
     </div>
   );
 }

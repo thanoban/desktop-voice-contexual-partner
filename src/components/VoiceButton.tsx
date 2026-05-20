@@ -1,20 +1,23 @@
 import { useEffect, useCallback, useRef } from "react";
 import { useChatStore } from "@/store/chatStore";
-import { sendMessage, stopSpeaking } from "@/lib/tauri";
+import { startListening, stopListening, stopSpeaking, sendMessage } from "@/lib/tauri";
 
 interface Props {
   disabled?: boolean;
+  voiceReady?: boolean;
+  onNeedsSetup?: () => void;
 }
 
-export function VoiceButton({ disabled }: Props) {
-  const isListening = useChatStore((s) => s.isListening);
+export function VoiceButton({ disabled, voiceReady = true, onNeedsSetup }: Props) {
+  const isListening  = useChatStore((s) => s.isListening);
   const isProcessing = useChatStore((s) => s.isProcessing);
-  const isSpeaking = useChatStore((s) => s.isSpeaking);
-  const setListening = useChatStore((s) => s.setListening);
+  const isSpeaking   = useChatStore((s) => s.isSpeaking);
+  const setListening  = useChatStore((s) => s.setListening);
   const setProcessing = useChatStore((s) => s.setProcessing);
-  const addMessage = useChatStore((s) => s.addMessage);
+  const addMessage    = useChatStore((s) => s.addMessage);
 
-  const holdStart = useRef<number>(0);
+  const holdStart  = useRef<number>(0);
+  const isHolding  = useRef<boolean>(false);
 
   const state: "idle" | "listening" | "processing" | "speaking" = isSpeaking
     ? "speaking"
@@ -24,51 +27,62 @@ export function VoiceButton({ disabled }: Props) {
     ? "listening"
     : "idle";
 
+  // ── Interrupt companion speech ────────────────────────────────────────────
   const handleInterrupt = useCallback(async () => {
-    if (isSpeaking) {
-      await stopSpeaking();
-    }
+    if (isSpeaking) await stopSpeaking().catch(() => null);
   }, [isSpeaking]);
 
-  const handlePTTStart = useCallback(() => {
-    if (disabled || isProcessing) return;
-    if (isSpeaking) {
-      handleInterrupt();
-      return;
-    }
+  // ── PTT begin ────────────────────────────────────────────────────────────
+  const handlePTTStart = useCallback(async () => {
+    if (disabled || isProcessing || isHolding.current) return;
+    if (isSpeaking) { handleInterrupt(); return; }
+    if (!voiceReady) { onNeedsSetup?.(); return; }
+
+    isHolding.current = true;
     holdStart.current = Date.now();
     setListening(true);
-  }, [disabled, isProcessing, isSpeaking, setListening, handleInterrupt]);
 
+    try {
+      await startListening();
+    } catch (e) {
+      setListening(false);
+      isHolding.current = false;
+      // Surface config errors as a chat message so the user can act on them
+      addMessage({ role: "assistant", content: `[Voice setup needed: ${e}]` });
+    }
+  }, [disabled, isProcessing, isSpeaking, voiceReady, onNeedsSetup, setListening, addMessage, handleInterrupt]);
+
+  // ── PTT end ──────────────────────────────────────────────────────────────
   const handlePTTEnd = useCallback(async () => {
-    if (!isListening) return;
-    setListening(false);
+    if (!isHolding.current) return;
+    isHolding.current = false;
 
     const held = Date.now() - holdStart.current;
-    if (held < 300) return; // too short, ignore
+    setListening(false);
 
-    // M0 dev affordance: native dialog to type text until STT is wired in M1
-    // This block will be removed in M1 when whisper.cpp STT is integrated
-    const { ask } = await import("@tauri-apps/plugin-dialog");
-    const text = await ask("What did you want to say?", {
-      title: "Voice Input (M0 placeholder)",
-      okLabel: "Send",
-      cancelLabel: "Cancel",
-    });
-    if (!text || typeof text !== "string") return;
+    if (held < 300) {
+      // Too short — silently cancel
+      try { await stopListening(); } catch { /* ignore */ }
+      return;
+    }
 
-    const userText = String(text).trim();
-    if (!userText) return;
-
-    addMessage({ role: "user", content: userText });
     setProcessing(true);
     try {
-      await sendMessage(userText);
-    } finally {
+      const transcript = await stopListening();
+      if (!transcript || !transcript.trim()) {
+        setProcessing(false);
+        return;
+      }
+      const text = transcript.trim();
+      addMessage({ role: "user", content: text });
+      await sendMessage(text);
+    } catch (e) {
+      addMessage({ role: "assistant", content: `[Error: ${e}]` });
       setProcessing(false);
     }
-  }, [isListening, setListening, addMessage, setProcessing]);
+  }, [setListening, setProcessing, addMessage]);
 
+  // ── Keyboard PTT (Space bar) ─────────────────────────────────────────────
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if (e.code === "Space" && !e.repeat && document.activeElement === document.body) {
@@ -90,6 +104,7 @@ export function VoiceButton({ disabled }: Props) {
     };
   }, [handlePTTStart, handlePTTEnd]);
 
+  // ── Render ─────────────────────────────────────────────────────────────
   const colors: Record<typeof state, string> = {
     idle:       "var(--bg-elevated)",
     listening:  "var(--accent)",
@@ -109,8 +124,9 @@ export function VoiceButton({ disabled }: Props) {
       <button
         onMouseDown={handlePTTStart}
         onMouseUp={handlePTTEnd}
-        onMouseLeave={() => { if (isListening) handlePTTEnd(); }}
+        onMouseLeave={() => { if (isHolding.current) handlePTTEnd(); }}
         disabled={disabled}
+        type="button"
         style={{
           width: "72px",
           height: "72px",
@@ -129,9 +145,9 @@ export function VoiceButton({ disabled }: Props) {
         className={state === "idle" ? "animate-pulse-glow" : ""}
         aria-label={labels[state]}
       >
-        {state === "processing" ? (
-          <span style={{ fontSize: "20px" }} className="animate-spin">⟳</span>
-        ) : state === "speaking" ? "✕" : "🎙"}
+        {state === "processing"
+          ? <span style={{ fontSize: "20px" }} className="animate-spin">⟳</span>
+          : state === "speaking" ? "✕" : "🎙"}
       </button>
 
       <span style={{ fontSize: "12px", color: "var(--text-muted)", letterSpacing: "0.02em" }}>

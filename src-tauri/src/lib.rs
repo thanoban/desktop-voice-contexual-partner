@@ -1,15 +1,39 @@
+mod audio;
 mod commands;
+mod context;
 mod db;
 mod llm;
 mod safety;
 mod tts;
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::AtomicBool;
+use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
+
+// ── App state ────────────────────────────────────────────────────────────────
 
 pub struct AppState {
     pub db: Mutex<rusqlite::Connection>,
+    pub recording: Mutex<Option<ActiveRecording>>,
+    pub context: Mutex<SharedContext>,
 }
+
+/// Holds the "stop" signal and the WAV file path for an in-progress recording.
+pub struct ActiveRecording {
+    pub stop_flag: Arc<AtomicBool>,
+    pub wav_path: PathBuf,
+}
+
+/// What the companion currently knows about the user's environment.
+#[derive(Default)]
+pub struct SharedContext {
+    pub window_title: Option<String>,
+    pub custom_note: Option<String>,
+    pub sharing: bool,
+}
+
+// ── Entry point ───────────────────────────────────────────────────────────────
 
 pub fn run() {
     tracing_subscriber::fmt()
@@ -31,7 +55,6 @@ pub fn run() {
                 .expect("Cannot resolve app data dir")
                 .join("voicepartner.db");
 
-            // Create app data dir if it doesn't exist
             if let Some(parent) = db_path.parent() {
                 std::fs::create_dir_all(parent)?;
             }
@@ -41,11 +64,12 @@ pub fn run() {
             let conn = rusqlite::Connection::open(&db_path)
                 .expect("Failed to open SQLite database");
 
-            db::migrations::run(&conn)
-                .expect("Database migration failed");
+            db::migrations::run(&conn).expect("Database migration failed");
 
             app.manage(AppState {
                 db: Mutex::new(conn),
+                recording: Mutex::new(None),
+                context: Mutex::new(SharedContext::default()),
             });
 
             Ok(())
@@ -57,6 +81,15 @@ pub fn run() {
             commands::chat::start_new_session,
             commands::chat::stop_speaking,
             commands::chat::speak_text,
+            // Voice (M1)
+            commands::voice::start_listening,
+            commands::voice::stop_listening,
+            commands::voice::get_audio_devices,
+            // Context sharing (M1)
+            commands::context::get_window_title,
+            commands::context::start_sharing_context,
+            commands::context::stop_sharing_context,
+            commands::context::set_context_note,
             // Settings
             commands::settings::get_settings,
             commands::settings::update_setting,
@@ -68,7 +101,6 @@ pub fn run() {
         .expect("Error running VoicePartner");
 }
 
-/// Convenience: get setting value from AppHandle (for use in setup hooks)
 #[allow(dead_code)]
 pub fn get_setting_from_handle(app: &AppHandle, key: &str) -> Option<String> {
     let state = app.state::<AppState>();

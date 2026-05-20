@@ -17,6 +17,10 @@ export interface Settings {
   piper_binary: string;
   piper_voice: string;
   onboarding_done: string;
+  whisper_binary: string;
+  whisper_model: string;
+  audio_input_device: string;
+  window_context_auto: string;
 }
 
 export interface OllamaStatus {
@@ -60,6 +64,43 @@ export const speakText = (text: string, voice: string): Promise<void> =>
 export const stopSpeaking = (): Promise<void> =>
   invoke("stop_speaking");
 
+// ── Voice input commands (M1) ─────────────────────────────────────────────────
+
+export interface AudioDevice {
+  name: string;
+  is_default: boolean;
+}
+
+export const getAudioDevices = (): Promise<AudioDevice[]> =>
+  invoke("get_audio_devices");
+
+export const startListening = (): Promise<void> =>
+  invoke("start_listening");
+
+/** Returns the transcribed text from the recorded audio. */
+export const stopListening = (): Promise<string> =>
+  invoke("stop_listening");
+
+// ── Context sharing commands (M1) ─────────────────────────────────────────────
+
+export interface ContextStatus {
+  sharing: boolean;
+  window_title?: string;
+  custom_note?: string;
+}
+
+export const getWindowTitle = (): Promise<string | null> =>
+  invoke("get_window_title");
+
+export const startSharingContext = (): Promise<ContextStatus> =>
+  invoke("start_sharing_context");
+
+export const stopSharingContext = (): Promise<void> =>
+  invoke("stop_sharing_context");
+
+export const setContextNote = (note: string): Promise<ContextStatus> =>
+  invoke("set_context_note", { note });
+
 // ── Event listeners ──────────────────────────────────────────────────────────
 
 export const onChatToken = (cb: (token: string) => void): Promise<UnlistenFn> =>
@@ -82,3 +123,18 @@ export const onVadSpeech = (cb: (active: boolean) => void): Promise<UnlistenFn> 
 
 export const onTranscription = (cb: (text: string) => void): Promise<UnlistenFn> =>
   listen<string>("stt:transcription", (e) => cb(e.payload));
+
+export const onAudioListening = (cb: (active: boolean) => void): Promise<UnlistenFn> =>
+  listen<boolean>("audio:listening", (e) => cb(e.payload));
+
+export const onAudioProcessing = (cb: (active: boolean) => void): Promise<UnlistenFn> =>
+  listen<boolean>("audio:processing", (e) => cb(e.payload));
+
+export const onAudioError = (cb: (msg: string) => void): Promise<UnlistenFn> =>
+  listen<string>("audio:error", (e) => cb(e.payload));
+
+export const onContextUpdate = (cb: (status: ContextStatus) => void): Promise<UnlistenFn> =>
+  listen<ContextStatus>("context:update", (e) => cb(e.payload));
+
+export const onSafetyShow = (cb: () => void): Promise<UnlistenFn> =>
+  listen("safety:show", () => cb());

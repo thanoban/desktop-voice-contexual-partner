@@ -59,7 +59,15 @@ pub async fn send_message(
         db::get_recent_turns(&conn, &session_id, 20)
     };
 
-    let system_prompt = personality_prompt(&personality, &name);
+    // Inject window context if the user has sharing enabled
+    let context_block = crate::commands::context::build_context_injection(&state);
+
+    let mut system_prompt = personality_prompt(&personality, &name);
+    if let Some(ref ctx) = context_block {
+        system_prompt.push_str("\n\n");
+        system_prompt.push_str(ctx);
+    }
+
     let mut messages: Vec<ChatMessage> = vec![ChatMessage {
         role: "system".into(),
         content: system_prompt,

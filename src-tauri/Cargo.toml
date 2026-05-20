@@ -24,6 +24,10 @@ tauri-plugin-shell = "2"
 tokio = { version = "1", features = ["full"] }
 futures-util = "0.3"
 
+# Audio capture
+cpal = "0.15"
+hound = "3"                      # WAV encoding
+
 # HTTP (Ollama client)
 reqwest = { version = "0.12", features = ["json", "stream"] }
 

@@ -1,15 +1,23 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useOllamaStore } from "@/store/ollamaStore";
 import { useSettingsStore } from "@/store/settingsStore";
+import { onContextUpdate, stopSharingContext, type ContextStatus } from "@/lib/tauri";
 
 export function StatusBar() {
   const { status, error, startPolling } = useOllamaStore();
   const model = useSettingsStore((s) => s.settings.model);
+  const [ctx, setCtx] = useState<ContextStatus>({ sharing: false });
 
   useEffect(() => {
     const stop = startPolling();
     return stop;
   }, [startPolling]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    onContextUpdate((s) => setCtx(s)).then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
+  }, []);
 
   const dot: Record<string, string> = {
     connected:    "var(--success)",
@@ -38,9 +46,11 @@ export function StatusBar() {
         fontSize: "11px",
         color: "var(--text-muted)",
         flexShrink: 0,
+        gap: "12px",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+      {/* Left: Ollama status */}
+      <div style={{ display: "flex", alignItems: "center", gap: "6px", flex: 1 }}>
         <span
           style={{
             width: "6px",
@@ -48,13 +58,46 @@ export function StatusBar() {
             borderRadius: "50%",
             background: dot[status],
             display: "inline-block",
+            flexShrink: 0,
           }}
         />
         <span>{label[status]}</span>
+        {status === "connected" && (
+          <span style={{ opacity: 0.6, marginLeft: "4px" }}>{model}</span>
+        )}
       </div>
 
-      {status === "connected" && (
-        <span style={{ opacity: 0.7 }}>{model}</span>
+      {/* Right: Context sharing indicator */}
+      {ctx.sharing && (
+        <button
+          type="button"
+          onClick={() => stopSharingContext().then(() => setCtx({ sharing: false }))}
+          title={`Sharing context: ${ctx.window_title ?? "active window"} — click to stop`}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "4px",
+            background: "rgba(59,130,246,0.15)",
+            border: "1px solid rgba(59,130,246,0.35)",
+            borderRadius: "10px",
+            padding: "1px 8px",
+            color: "#60a5fa",
+            fontSize: "10px",
+            cursor: "pointer",
+            maxWidth: "200px",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            flexShrink: 0,
+          }}
+        >
+          <span>◉</span>
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+            {ctx.window_title
+              ? ctx.window_title.slice(0, 30) + (ctx.window_title.length > 30 ? "…" : "")
+              : "Sharing context"}
+          </span>
+        </button>
       )}
     </div>
   );

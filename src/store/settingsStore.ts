@@ -16,6 +16,10 @@ const defaults: Settings = {
   piper_binary: "",
   piper_voice: "en_US-amy-medium",
   onboarding_done: "false",
+  whisper_binary: "",
+  whisper_model: "",
+  audio_input_device: "",
+  window_context_auto: "false",
 };
 
 export const useSettingsStore = create<SettingsState>((set) => ({

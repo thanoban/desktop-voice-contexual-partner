@@ -50,6 +50,18 @@ pub fn run(conn: &Connection) -> anyhow::Result<()> {
         ")?;
     }
 
+    if version < 2 {
+        conn.execute_batch("
+            INSERT OR IGNORE INTO settings VALUES ('audio_input_device',  'default');
+            INSERT OR IGNORE INTO settings VALUES ('whisper_binary',       '');
+            INSERT OR IGNORE INTO settings VALUES ('whisper_model',        '');
+            INSERT OR IGNORE INTO settings VALUES ('window_context_auto',  'false');
+            INSERT OR IGNORE INTO settings VALUES ('voice_threshold_db',   '-30');
+
+            INSERT INTO schema_version VALUES (2);
+        ")?;
+    }
+
     // Future migrations go here as `if version < N { ... }` blocks.
     // Never edit a migration that has already been applied.
 
