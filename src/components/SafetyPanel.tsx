@@ -6,23 +6,19 @@ interface Props {
 }
 
 const HELPLINES = [
-  { region: "US",  name: "988 Suicide & Crisis Lifeline",        number: "988",              url: "https://988lifeline.org" },
-  { region: "UK",  name: "Samaritans",                           number: "116 123",          url: "https://www.samaritans.org" },
-  { region: "CA",  name: "Crisis Services Canada",               number: "1-833-456-4566",   url: "https://www.crisisservicescanada.ca" },
-  { region: "AU",  name: "Lifeline Australia",                   number: "13 11 14",         url: "https://www.lifeline.org.au" },
-  { region: "INT", name: "International Association for Suicide Prevention", number: "",    url: "https://www.iasp.info/resources/Crisis_Centres" },
+  { region: "US",  name: "988 Suicide & Crisis Lifeline",                 number: "988",               url: "https://988lifeline.org" },
+  { region: "UK",  name: "Samaritans",                                    number: "116 123",           url: "https://www.samaritans.org" },
+  { region: "CA",  name: "Crisis Services Canada",                        number: "1-833-456-4566",    url: "https://www.crisisservicescanada.ca" },
+  { region: "AU",  name: "Lifeline Australia",                            number: "13 11 14",          url: "https://www.lifeline.org.au" },
+  { region: "LK",  name: "Sumithrayo Sri Lanka",                          number: "011-2696666",       url: "https://www.sumithrayo.org" },
+  { region: "IN",  name: "iCall (India)",                                 number: "9152987821",        url: "https://icallhelpline.org" },
+  { region: "NZ",  name: "Lifeline Aotearoa (NZ)",                        number: "0800 543 354",      url: "https://www.lifeline.org.nz" },
+  { region: "ZA",  name: "SADAG (South Africa)",                          number: "0800 567 567",      url: "https://www.sadag.org" },
+  { region: "INT", name: "International — IASP crisis centre directory",  number: "",                  url: "https://www.iasp.info/resources/Crisis_Centres" },
 ];
 
-function detectRegion(): string {
-  const lang = navigator.language.toLowerCase();
-  if (lang.includes("-gb") || lang === "en-gb") return "UK";
-  if (lang.includes("-ca")) return "CA";
-  if (lang.includes("-au")) return "AU";
-  return "US";
-}
-
 export function SafetyPanel({ visible, onDismiss }: Props) {
-  const [region, setRegion] = useState(() => detectRegion());
+  const [region, setRegion] = useState("US");
   if (!visible) return null;
 
   const line = HELPLINES.find((h) => h.region === region) ?? HELPLINES[0];
@@ -49,6 +45,7 @@ export function SafetyPanel({ visible, onDismiss }: Props) {
           You matter. Real support is available.
         </p>
         <button
+          type="button"
           onClick={onDismiss}
           style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: "18px" }}
         >
@@ -61,6 +58,7 @@ export function SafetyPanel({ visible, onDismiss }: Props) {
       </p>
 
       <select
+        aria-label="Select your region"
         value={region}
         onChange={(e) => setRegion(e.target.value)}
         style={{
@@ -72,10 +70,11 @@ export function SafetyPanel({ visible, onDismiss }: Props) {
           fontSize: "12px",
           marginBottom: "10px",
           width: "100%",
+          cursor: "pointer",
         }}
       >
         {HELPLINES.map((h) => (
-          <option key={h.region} value={h.region}>{h.region}</option>
+          <option key={h.region} value={h.region}>{h.region} — {h.name}</option>
         ))}
       </select>
 
