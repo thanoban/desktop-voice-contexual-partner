@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useRef } from "react";
 import { useChatStore } from "@/store/chatStore";
-import { startListening, stopListening, stopSpeaking, sendMessage } from "@/lib/tauri";
+import { startListening, stopListening, stopSpeaking, sendMessage, onPttStart, onPttEnd } from "@/lib/tauri";
 
 interface Props {
   disabled?: boolean;
@@ -82,7 +82,7 @@ export function VoiceButton({ disabled, voiceReady = true, onNeedsSetup }: Props
     }
   }, [setListening, setProcessing, addMessage]);
 
-  // ── Keyboard PTT (Space bar) ─────────────────────────────────────────────
+  // ── Keyboard PTT (Space bar, window-focused) ─────────────────────────────
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if (e.code === "Space" && !e.repeat && document.activeElement === document.body) {
@@ -102,6 +102,16 @@ export function VoiceButton({ disabled, voiceReady = true, onNeedsSetup }: Props
       window.removeEventListener("keydown", down);
       window.removeEventListener("keyup", up);
     };
+  }, [handlePTTStart, handlePTTEnd]);
+
+  // ── Global PTT shortcut (Alt+Space, works from tray/background) ───────────
+  useEffect(() => {
+    const unlisteners: Array<() => void> = [];
+    Promise.all([
+      onPttStart(() => handlePTTStart()),
+      onPttEnd(() => handlePTTEnd()),
+    ]).then((fns) => unlisteners.push(...fns));
+    return () => unlisteners.forEach((fn) => fn());
   }, [handlePTTStart, handlePTTEnd]);
 
   // ── Render ─────────────────────────────────────────────────────────────

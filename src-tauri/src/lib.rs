@@ -10,12 +10,15 @@ mod safety;
 mod summarize;
 mod tts;
 
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
 use std::path::PathBuf;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
-// ── App state ────────────────────────────────────────────────────────────────
+// ── App state ─────────────────────────────────────────────────────────────────
 
 pub struct AppState {
     pub db: Mutex<rusqlite::Connection>,
@@ -23,18 +26,38 @@ pub struct AppState {
     pub context: Mutex<SharedContext>,
 }
 
-/// Holds the "stop" signal and the WAV file path for an in-progress recording.
 pub struct ActiveRecording {
     pub stop_flag: Arc<AtomicBool>,
     pub wav_path: PathBuf,
 }
 
-/// What the companion currently knows about the user's environment.
 #[derive(Default)]
 pub struct SharedContext {
     pub window_title: Option<String>,
     pub custom_note: Option<String>,
     pub sharing: bool,
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+fn toggle_window(app: &AppHandle) {
+    if let Some(win) = app.get_webview_window("main") {
+        if win.is_visible().unwrap_or(false) {
+            let _ = win.hide();
+        } else {
+            let _ = win.show();
+            let _ = win.set_focus();
+        }
+    }
+}
+
+fn show_window(app: &AppHandle) {
+    if let Some(win) = app.get_webview_window("main") {
+        if !win.is_visible().unwrap_or(true) {
+            let _ = win.show();
+        }
+        let _ = win.set_focus();
+    }
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -53,6 +76,7 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
+            // ── Database ──────────────────────────────────────────────────────
             let db_path = app
                 .path()
                 .app_data_dir()
@@ -75,6 +99,63 @@ pub fn run() {
                 recording: Mutex::new(None),
                 context: Mutex::new(SharedContext::default()),
             });
+
+            // ── System tray ───────────────────────────────────────────────────
+            let toggle_item = MenuItem::with_id(app, "toggle", "Show / Hide", true, None::<&str>)?;
+            let sep         = PredefinedMenuItem::separator(app)?;
+            let quit_item   = MenuItem::with_id(app, "quit", "Quit VoicePartner", true, None::<&str>)?;
+            let menu        = Menu::with_items(app, &[&toggle_item, &sep, &quit_item])?;
+
+            let tray_icon = app
+                .default_window_icon()
+                .cloned()
+                .unwrap_or_else(|| tauri::image::Image::new_owned(vec![0, 0, 0, 0], 1, 1));
+
+            let _tray = TrayIconBuilder::new()
+                .icon(tray_icon)
+                .menu(&menu)
+                .tooltip("VoicePartner")
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        toggle_window(tray.app_handle());
+                    }
+                })
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "toggle" => toggle_window(app),
+                    "quit"   => app.exit(0),
+                    _        => {}
+                })
+                .build(app)?;
+
+            // ── Close → hide to tray ──────────────────────────────────────────
+            if let Some(window) = app.get_webview_window("main") {
+                let win = window.clone();
+                window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = win.hide();
+                    }
+                });
+            }
+
+            // ── Global PTT shortcut: Alt+Space ────────────────────────────────
+            let ptt = Shortcut::new(Some(Modifiers::ALT), Code::Space);
+            app.global_shortcut().on_shortcut(ptt, |app_handle, _shortcut, event| {
+                match event.state {
+                    ShortcutState::Pressed => {
+                        show_window(app_handle);
+                        let _ = app_handle.emit("shortcut:ptt:start", ());
+                    }
+                    ShortcutState::Released => {
+                        let _ = app_handle.emit("shortcut:ptt:end", ());
+                    }
+                }
+            })?;
 
             Ok(())
         })
