@@ -13,8 +13,16 @@ const HELPLINES = [
   { region: "INT", name: "International Association for Suicide Prevention", number: "",    url: "https://www.iasp.info/resources/Crisis_Centres" },
 ];
 
+function detectRegion(): string {
+  const lang = navigator.language.toLowerCase();
+  if (lang.includes("-gb") || lang === "en-gb") return "UK";
+  if (lang.includes("-ca")) return "CA";
+  if (lang.includes("-au")) return "AU";
+  return "US";
+}
+
 export function SafetyPanel({ visible, onDismiss }: Props) {
-  const [region, setRegion] = useState("US");
+  const [region, setRegion] = useState(() => detectRegion());
   if (!visible) return null;
 
   const line = HELPLINES.find((h) => h.region === region) ?? HELPLINES[0];

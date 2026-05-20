@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Transcript } from "@/components/Transcript";
 import { VoiceButton } from "@/components/VoiceButton";
 import { VoiceVisualizer } from "@/components/VoiceVisualizer";
@@ -30,7 +31,7 @@ export default function App() {
   const [showVoiceSetup, setShowVoiceSetup] = useState(false);
   const [ctx, setCtx] = useState<ContextStatus>({ sharing: false });
 
-  const { settings, load: loadSettings } = useSettingsStore();
+  const { settings, load: loadSettings, loaded } = useSettingsStore();
   const { appendToken, finalizeStream, setProcessing, setSpeaking, addMessage } = useChatStore();
   const ollamaStatus = useOllamaStore((s) => s.status);
 
@@ -75,7 +76,15 @@ export default function App() {
     }
   }, [ollamaStatus, onboardingDone, greeted, setProcessing]);
 
-  if (!settings.onboarding_done || !onboardingDone) {
+  if (!loaded) {
+    return (
+      <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-base)" }}>
+        <span style={{ fontSize: "13px", color: "var(--text-muted)" }}>Loading…</span>
+      </div>
+    );
+  }
+
+  if (!onboardingDone) {
     return <Onboarding onDone={() => loadSettings()} />;
   }
 
@@ -119,6 +128,25 @@ export default function App() {
             title="Settings"
           >
             ⚙
+          </button>
+          <div style={{ width: "1px", height: "14px", background: "var(--text-dim)", margin: "0 2px" }} />
+          <button
+            type="button"
+            onClick={() => getCurrentWindow().minimize()}
+            style={titleBtnStyle}
+            aria-label="Minimize"
+            title="Minimize"
+          >
+            −
+          </button>
+          <button
+            type="button"
+            onClick={() => getCurrentWindow().close()}
+            style={{ ...titleBtnStyle, fontSize: "14px" }}
+            aria-label="Close"
+            title="Close"
+          >
+            ✕
           </button>
         </div>
       </div>

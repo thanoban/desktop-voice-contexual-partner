@@ -5,7 +5,10 @@ import { onContextUpdate, stopSharingContext, type ContextStatus } from "@/lib/t
 
 export function StatusBar() {
   const { status, error, startPolling } = useOllamaStore();
-  const model = useSettingsStore((s) => s.settings.model);
+  const { model, window_context_auto } = useSettingsStore((s) => ({
+    model: s.settings.model,
+    window_context_auto: s.settings.window_context_auto,
+  }));
   const [ctx, setCtx] = useState<ContextStatus>({ sharing: false });
 
   useEffect(() => {
@@ -67,7 +70,25 @@ export function StatusBar() {
         )}
       </div>
 
-      {/* Right: Context sharing indicator */}
+      {/* Auto-context badge */}
+      {window_context_auto === "true" && !ctx.sharing && (
+        <span
+          style={{
+            background: "rgba(167,139,250,0.1)",
+            border: "1px solid rgba(167,139,250,0.25)",
+            borderRadius: "10px",
+            padding: "1px 8px",
+            color: "var(--accent)",
+            fontSize: "10px",
+            flexShrink: 0,
+          }}
+          title="Auto-context: active window is injected into every message"
+        >
+          ◎ Auto
+        </span>
+      )}
+
+      {/* Right: Manual context sharing indicator */}
       {ctx.sharing && (
         <button
           type="button"
