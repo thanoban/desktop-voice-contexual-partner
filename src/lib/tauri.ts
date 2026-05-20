@@ -26,6 +26,7 @@ export interface Settings {
   voice_expressiveness: string;
   embedding_model: string;
   custom_system_prompt: string;
+  custom_voices: string;
 }
 
 export interface OllamaStatus {

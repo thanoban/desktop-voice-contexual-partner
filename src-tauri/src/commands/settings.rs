@@ -31,6 +31,8 @@ pub struct Settings {
     pub embedding_model: String,
     // Custom prompt (M3)
     pub custom_system_prompt: String,
+    // Custom voices (M6): JSON array of {label, path} objects
+    pub custom_voices: String,
 }
 
 impl Default for Settings {
@@ -53,6 +55,7 @@ impl Default for Settings {
             voice_expressiveness: "0.667".into(),
             embedding_model:       "nomic-embed-text".into(),
             custom_system_prompt:  String::new(),
+            custom_voices:         "[]".into(),
         }
     }
 }
@@ -81,6 +84,7 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<Settings, String> {
         embedding_model:         pairs.get("embedding_model").cloned().unwrap_or(d.embedding_model),
         custom_system_prompt:    pairs.get("custom_system_prompt").cloned().unwrap_or(d.custom_system_prompt),
         window_context_allowed:  pairs.get("window_context_allowed").cloned().unwrap_or(d.window_context_allowed),
+        custom_voices:           pairs.get("custom_voices").cloned().unwrap_or(d.custom_voices),
     })
 }
 
