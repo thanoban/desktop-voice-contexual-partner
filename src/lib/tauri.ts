@@ -13,7 +13,7 @@ export interface Settings {
   endpoint: string;
   model: string;
   companion_name: string;
-  personality: "gentle" | "playful" | "calm" | "energetic";
+  personality: "gentle" | "playful" | "calm" | "energetic" | "mentor" | "caring";
   piper_binary: string;
   piper_voice: string;
   onboarding_done: string;
@@ -214,6 +214,7 @@ export interface SetupStatus {
   whisper_model_ok: boolean;
   piper_path: string;
   whisper_model_path: string;
+  voice_paths: Record<string, string>;
 }
 
 export interface DownloadProgress {

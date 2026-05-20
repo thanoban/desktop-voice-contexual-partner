@@ -1,6 +1,7 @@
 use crate::{db, AppState};
 use futures_util::StreamExt;
 use serde::Serialize;
+use std::collections::HashMap;
 use std::io::Write;
 use std::path::PathBuf;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -10,12 +11,34 @@ use tauri_plugin_dialog::DialogExt;
 
 const PIPER_WIN_URL: &str =
     "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_windows_amd64.zip";
-const PIPER_VOICE_ONNX_URL: &str =
+
+const PIPER_VOICE_AMY_ONNX: &str =
     "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/amy/medium/en_US-amy-medium.onnx";
-const PIPER_VOICE_JSON_URL: &str =
+const PIPER_VOICE_AMY_JSON: &str =
     "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/amy/medium/en_US-amy-medium.onnx.json";
+const PIPER_VOICE_LESSAC_ONNX: &str =
+    "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/medium/en_US-lessac-medium.onnx";
+const PIPER_VOICE_LESSAC_JSON: &str =
+    "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json";
+const PIPER_VOICE_RYAN_ONNX: &str =
+    "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/ryan/medium/en_US-ryan-medium.onnx";
+const PIPER_VOICE_RYAN_JSON: &str =
+    "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/ryan/medium/en_US-ryan-medium.onnx.json";
+const PIPER_VOICE_ALAN_ONNX: &str =
+    "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_GB/alan/medium/en_GB-alan-medium.onnx";
+const PIPER_VOICE_ALAN_JSON: &str =
+    "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_GB/alan/medium/en_GB-alan-medium.onnx.json";
+
 const WHISPER_MODEL_URL: &str =
     "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin";
+
+// Voice IDs that this app knows how to download
+const KNOWN_VOICE_IDS: &[&str] = &[
+    "en_US-amy-medium",
+    "en_US-lessac-medium",
+    "en_US-ryan-medium",
+    "en_GB-alan-medium",
+];
 
 // ── Event payloads ────────────────────────────────────────────────────────────
 
@@ -41,6 +64,8 @@ pub struct SetupStatus {
     pub whisper_model_ok: bool,
     pub piper_path: String,
     pub whisper_model_path: String,
+    /// Maps known voice_id → full .onnx path for each voice that is already on disk.
+    pub voice_paths: HashMap<String, String>,
 }
 
 fn tools_dir(app: &AppHandle) -> PathBuf {
@@ -50,13 +75,12 @@ fn tools_dir(app: &AppHandle) -> PathBuf {
         .join("tools")
 }
 
-/// Returns status of installed tools.
 #[tauri::command]
 pub fn check_setup(app: AppHandle, state: State<'_, AppState>) -> SetupStatus {
     let t = tools_dir(&app);
     let auto_piper = t.join("piper").join("piper.exe");
-    let auto_voice = t.join("piper").join("voices").join("en_US-amy-medium.onnx");
-    let auto_model = t.join("whisper").join("ggml-base.en.bin");
+    let voices_base = t.join("piper").join("voices");
+    let auto_model  = t.join("whisper").join("ggml-base.en.bin");
 
     let (cfg_piper, cfg_voice, cfg_model) = {
         let conn = state.db.lock().unwrap();
@@ -67,9 +91,26 @@ pub fn check_setup(app: AppHandle, state: State<'_, AppState>) -> SetupStatus {
         )
     };
 
+    // Collect which known voices are present on disk
+    let mut voice_paths: HashMap<String, String> = HashMap::new();
+    for vid in KNOWN_VOICE_IDS {
+        let p = voices_base.join(format!("{}.onnx", vid));
+        if p.exists() {
+            voice_paths.insert(vid.to_string(), p.to_string_lossy().to_string());
+        }
+    }
+    // Also include a user-configured path if it matches a known voice ID
+    if !cfg_voice.is_empty() {
+        for vid in KNOWN_VOICE_IDS {
+            if cfg_voice.contains(vid) && PathBuf::from(&cfg_voice).exists() {
+                voice_paths.entry(vid.to_string()).or_insert_with(|| cfg_voice.clone());
+            }
+        }
+    }
+
     let piper_ok = auto_piper.exists()
         || (!cfg_piper.is_empty() && PathBuf::from(&cfg_piper).exists());
-    let voice_ok = auto_voice.exists()
+    let voice_ok = !voice_paths.is_empty()
         || (!cfg_voice.is_empty() && PathBuf::from(&cfg_voice).exists());
     let model_ok = auto_model.exists()
         || (!cfg_model.is_empty() && PathBuf::from(&cfg_model).exists());
@@ -88,12 +129,12 @@ pub fn check_setup(app: AppHandle, state: State<'_, AppState>) -> SetupStatus {
         } else {
             cfg_model
         },
+        voice_paths,
     }
 }
 
 // ── File picker ───────────────────────────────────────────────────────────────
 
-/// Open a native file picker. `filters` is a list of extensions e.g. ["exe", "bin"].
 #[tauri::command]
 pub fn pick_file(app: AppHandle, filters: Vec<String>) -> Option<String> {
     let refs: Vec<&str> = filters.iter().map(|s| s.as_str()).collect();
@@ -111,11 +152,13 @@ pub fn pick_file(app: AppHandle, filters: Vec<String>) -> Option<String> {
 
 // ── Download ──────────────────────────────────────────────────────────────────
 
-/// Download a named tool with progress events.
-/// tool: "piper_windows" | "piper_voice_amy" | "whisper_model_base_en"
+/// Download a named tool. Supported tool IDs:
+///   piper_windows | piper_voice_amy | piper_voice_lessac | piper_voice_ryan |
+///   piper_voice_alan | whisper_model_base_en
+///
 /// Emits: download:progress { tool, downloaded, total }
-/// Emits: download:done    { tool, path }
-/// Emits: download:error   { tool, error }
+///        download:done     { tool, path }
+///        download:error    { tool, error }
 #[tauri::command]
 pub async fn download_tool(
     app: AppHandle,
@@ -125,6 +168,9 @@ pub async fn download_tool(
     let result = match tool.as_str() {
         "piper_windows"         => dl_piper_windows(&app, &state).await,
         "piper_voice_amy"       => dl_piper_voice_amy(&app, &state).await,
+        "piper_voice_lessac"    => dl_piper_voice_file(&app, "piper_voice_lessac", "en_US-lessac-medium", PIPER_VOICE_LESSAC_ONNX, PIPER_VOICE_LESSAC_JSON).await,
+        "piper_voice_ryan"      => dl_piper_voice_file(&app, "piper_voice_ryan",   "en_US-ryan-medium",   PIPER_VOICE_RYAN_ONNX,   PIPER_VOICE_RYAN_JSON).await,
+        "piper_voice_alan"      => dl_piper_voice_file(&app, "piper_voice_alan",   "en_GB-alan-medium",   PIPER_VOICE_ALAN_ONNX,   PIPER_VOICE_ALAN_JSON).await,
         "whisper_model_base_en" => dl_whisper_model(&app, &state).await,
         other => Err(format!("Unknown tool: {other}")),
     };
@@ -137,7 +183,7 @@ pub async fn download_tool(
     result
 }
 
-// ── Shared download helper ────────────────────────────────────────────────────
+// ── Shared download helpers ───────────────────────────────────────────────────
 
 async fn fetch_with_progress(
     app: &AppHandle,
@@ -177,6 +223,33 @@ async fn fetch_with_progress(
     Ok(())
 }
 
+/// Downloads a Piper voice .onnx + .onnx.json to the shared voices directory.
+/// Does NOT auto-switch `piper_voice` — the user chooses via VoiceGallery.
+async fn dl_piper_voice_file(
+    app: &AppHandle,
+    tool_id: &str,
+    voice_id: &str,
+    onnx_url: &str,
+    json_url: &str,
+) -> Result<String, String> {
+    let voices_dir = tools_dir(app).join("piper").join("voices");
+    let onnx = voices_dir.join(format!("{}.onnx", voice_id));
+    let json = voices_dir.join(format!("{}.onnx.json", voice_id));
+
+    fetch_with_progress(app, tool_id, onnx_url, &onnx).await?;
+
+    let resp = reqwest::get(json_url).await.map_err(|e| e.to_string())?;
+    std::fs::write(&json, resp.bytes().await.map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+
+    let path_str = onnx.to_string_lossy().to_string();
+    let _ = app.emit("download:done", DownloadDone {
+        tool: tool_id.to_string(),
+        path: path_str.clone(),
+    });
+    Ok(path_str)
+}
+
 // ── Per-tool downloaders ──────────────────────────────────────────────────────
 
 async fn dl_piper_windows(
@@ -189,7 +262,6 @@ async fn dl_piper_windows(
     let piper_dir = tools_dir(app).join("piper");
     std::fs::create_dir_all(&piper_dir).map_err(|e| e.to_string())?;
 
-    // Extract .exe and .dll files from the zip
     let data = std::fs::read(&zip_path).map_err(|e| e.to_string())?;
     let cursor = std::io::Cursor::new(data);
     let mut archive = zip::ZipArchive::new(cursor).map_err(|e| e.to_string())?;
@@ -224,36 +296,18 @@ async fn dl_piper_windows(
     Ok(exe_path)
 }
 
+/// Downloads Amy and auto-activates her as the current voice (required-setup default).
 async fn dl_piper_voice_amy(
     app: &AppHandle,
     state: &State<'_, AppState>,
 ) -> Result<String, String> {
-    let voices_dir = tools_dir(app).join("piper").join("voices");
-    let onnx = voices_dir.join("en_US-amy-medium.onnx");
-    let json = voices_dir.join("en_US-amy-medium.onnx.json");
-
-    // Download .onnx model (large, with progress)
-    fetch_with_progress(app, "piper_voice_amy", PIPER_VOICE_ONNX_URL, &onnx).await?;
-
-    // Download .onnx.json config (small, no separate progress)
-    let resp = reqwest::get(PIPER_VOICE_JSON_URL)
-        .await
-        .map_err(|e| e.to_string())?;
-    std::fs::write(&json, resp.bytes().await.map_err(|e| e.to_string())?)
-        .map_err(|e| e.to_string())?;
-
-    let path_str = onnx.to_string_lossy().to_string();
-    {
-        // Store full path so resolve_voice() finds it immediately
-        let conn = state.db.lock().unwrap();
-        let _ = db::set_setting(&conn, "piper_voice", &path_str);
-    }
-
-    let _ = app.emit("download:done", DownloadDone {
-        tool: "piper_voice_amy".into(),
-        path: path_str.clone(),
-    });
-    Ok(path_str)
+    let path = dl_piper_voice_file(
+        app, "piper_voice_amy", "en_US-amy-medium",
+        PIPER_VOICE_AMY_ONNX, PIPER_VOICE_AMY_JSON,
+    ).await?;
+    let conn = state.db.lock().unwrap();
+    let _ = db::set_setting(&conn, "piper_voice", &path);
+    Ok(path)
 }
 
 async fn dl_whisper_model(

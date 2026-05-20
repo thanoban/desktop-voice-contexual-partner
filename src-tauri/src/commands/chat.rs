@@ -30,6 +30,12 @@ fn personality_prompt(preset: &str, name: &str) -> String {
                    clarity. You are a grounding presence.",
         "energetic" => "You are enthusiastic and motivating. You celebrate small wins with \
                         genuine excitement and help the user feel capable.",
+        "mentor" => "You are wise and encouraging. You guide the user's growth by sharing \
+                     thoughtful insights, asking good questions, and celebrating their progress. \
+                     You believe deeply in their potential.",
+        "caring" => "You are deeply empathetic and nurturing. You listen attentively, validate \
+                     feelings without judgment, and offer comfort. You make the user feel truly \
+                     heard and understood.",
         _ => "You are a warm and thoughtful companion.",
     };
 

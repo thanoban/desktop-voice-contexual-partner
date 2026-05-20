@@ -6,19 +6,15 @@ import { MemoryPanel } from "@/components/MemoryPanel";
 import { DocumentPanel } from "@/components/DocumentPanel";
 import { ContextPermissionDialog } from "@/components/ContextPermissionDialog";
 import { ModelSetupPanel } from "@/components/ModelSetupPanel";
+import { VoiceGallery, VOICE_CATALOG } from "@/components/VoiceGallery";
 
 const PERSONALITIES = [
   { id: "gentle",    label: "Gentle",    desc: "Warm, patient, softly encouraging" },
   { id: "playful",   label: "Playful",   desc: "Light-hearted, witty, upbeat" },
   { id: "calm",      label: "Calm",      desc: "Steady, measured, quietly supportive" },
   { id: "energetic", label: "Energetic", desc: "Enthusiastic, lively, motivating" },
-];
-
-const PIPER_VOICES = [
-  { id: "en_US-amy-medium",    label: "Amy (US Female, warm)" },
-  { id: "en_US-lessac-medium", label: "Lessac (US Female, clear)" },
-  { id: "en_GB-alan-medium",   label: "Alan (UK Male, calm)" },
-  { id: "en_US-ryan-medium",   label: "Ryan (US Male, friendly)" },
+  { id: "mentor",    label: "Mentor",    desc: "Wise, guiding, nurtures your growth" },
+  { id: "caring",    label: "Caring",    desc: "Deeply empathetic, makes you feel heard" },
 ];
 
 interface Props {
@@ -36,6 +32,7 @@ export function SettingsPanel({ open, onClose }: Props) {
   const [documentPanelOpen, setDocumentPanelOpen] = useState(false);
   const [ctxPermOpen, setCtxPermOpen] = useState(false);
   const [setupPanelOpen, setSetupPanelOpen] = useState(false);
+  const [voiceGalleryOpen, setVoiceGalleryOpen] = useState(false);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setLocalEndpoint(settings.endpoint); }, [settings.endpoint]);
@@ -129,17 +126,24 @@ export function SettingsPanel({ open, onClose }: Props) {
 
         {/* Voice */}
         <Section title="Voice">
-          <Label>Voice preset</Label>
-          <select
-            aria-label="Voice preset"
-            value={settings.piper_voice}
-            onChange={(e) => update("piper_voice", e.target.value)}
-            style={selectStyle}
-          >
-            {PIPER_VOICES.map((v) => (
-              <option key={v.id} value={v.id}>{v.label}</option>
-            ))}
-          </select>
+          <Label>Active voice</Label>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", background: "var(--bg-elevated)", border: "1px solid var(--text-dim)", borderRadius: "6px", padding: "7px 10px" }}>
+            <span style={{ flex: 1, fontSize: "13px", color: "var(--text-primary)" }}>
+              {VOICE_CATALOG.find((v) => settings.piper_voice?.includes(v.id))?.label ?? "Custom"}
+              <span style={{ marginLeft: "6px", fontSize: "11px", color: "var(--text-muted)" }}>
+                {VOICE_CATALOG.find((v) => settings.piper_voice?.includes(v.id))
+                  ? `· ${VOICE_CATALOG.find((v) => settings.piper_voice?.includes(v.id))!.accent}`
+                  : ""}
+              </span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setVoiceGalleryOpen(true)}
+              style={{ background: "transparent", border: "1px solid var(--text-dim)", borderRadius: "5px", color: "var(--text-muted)", fontSize: "11px", padding: "3px 8px", cursor: "pointer", whiteSpace: "nowrap" }}
+            >
+              Change…
+            </button>
+          </div>
           <Label>Piper binary path</Label>
           <PathInput
             value={settings.piper_binary}
@@ -362,6 +366,7 @@ export function SettingsPanel({ open, onClose }: Props) {
     <MemoryPanel open={memoryPanelOpen} onClose={() => setMemoryPanelOpen(false)} />
     <DocumentPanel open={documentPanelOpen} onClose={() => setDocumentPanelOpen(false)} />
     {setupPanelOpen && <ModelSetupPanel onDone={() => setSetupPanelOpen(false)} />}
+    {voiceGalleryOpen && <VoiceGallery onDone={() => setVoiceGalleryOpen(false)} />}
     {ctxPermOpen && (
       <ContextPermissionDialog
         onAllow={async () => {
