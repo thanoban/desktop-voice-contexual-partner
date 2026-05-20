@@ -21,6 +21,7 @@ export interface Settings {
   whisper_model: string;
   audio_input_device: string;
   window_context_auto: string;
+  window_context_allowed: string;
   voice_speed: string;
   voice_expressiveness: string;
   embedding_model: string;
@@ -212,8 +213,5 @@ export const expandToMain = (): Promise<void> =>
 
 // ── Global PTT shortcut events (M5) ─────────────────────────────────────────
 
-export const onPttStart = (cb: () => void): Promise<UnlistenFn> =>
-  listen("shortcut:ptt:start", () => cb());
-
-export const onPttEnd = (cb: () => void): Promise<UnlistenFn> =>
-  listen("shortcut:ptt:end", () => cb());
+export const onPttToggle = (cb: () => void): Promise<UnlistenFn> =>
+  listen("shortcut:ptt:toggle", () => cb());

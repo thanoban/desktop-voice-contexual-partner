@@ -4,6 +4,7 @@ import { useOllamaStore } from "@/store/ollamaStore";
 import { getAudioDevices, getMemoryCount, type AudioDevice } from "@/lib/tauri";
 import { MemoryPanel } from "@/components/MemoryPanel";
 import { DocumentPanel } from "@/components/DocumentPanel";
+import { ContextPermissionDialog } from "@/components/ContextPermissionDialog";
 
 const PERSONALITIES = [
   { id: "gentle",    label: "Gentle",    desc: "Warm, patient, softly encouraging" },
@@ -32,6 +33,7 @@ export function SettingsPanel({ open, onClose }: Props) {
   const [memoryCount, setMemoryCount] = useState(0);
   const [memoryPanelOpen, setMemoryPanelOpen] = useState(false);
   const [documentPanelOpen, setDocumentPanelOpen] = useState(false);
+  const [ctxPermOpen, setCtxPermOpen] = useState(false);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setLocalEndpoint(settings.endpoint); }, [settings.endpoint]);
@@ -218,10 +220,33 @@ export function SettingsPanel({ open, onClose }: Props) {
             <input
               type="checkbox"
               checked={settings.window_context_auto === "true"}
-              onChange={(e) => update("window_context_auto", e.target.checked ? "true" : "false")}
+              onChange={(e) => {
+                if (e.target.checked) {
+                  if (settings.window_context_allowed === "unset") {
+                    setCtxPermOpen(true);
+                  } else if (settings.window_context_allowed === "true") {
+                    update("window_context_auto", "true");
+                  }
+                  // "false" means denied — do nothing (checkbox stays off)
+                } else {
+                  update("window_context_auto", "false");
+                }
+              }}
             />
             Auto-detect active window (inject into every message)
           </label>
+          {settings.window_context_allowed === "false" && (
+            <p style={{ fontSize: "11px", color: "var(--error)", marginTop: "2px" }}>
+              Permission denied.{" "}
+              <button
+                type="button"
+                onClick={() => setCtxPermOpen(true)}
+                style={{ background: "none", border: "none", color: "var(--accent)", fontSize: "11px", cursor: "pointer", padding: 0 }}
+              >
+                Review
+              </button>
+            </p>
+          )}
         </Section>
 
         {/* Model */}
@@ -320,6 +345,19 @@ export function SettingsPanel({ open, onClose }: Props) {
     </div>
     <MemoryPanel open={memoryPanelOpen} onClose={() => setMemoryPanelOpen(false)} />
     <DocumentPanel open={documentPanelOpen} onClose={() => setDocumentPanelOpen(false)} />
+    {ctxPermOpen && (
+      <ContextPermissionDialog
+        onAllow={async () => {
+          await update("window_context_allowed", "true");
+          await update("window_context_auto", "true");
+          setCtxPermOpen(false);
+        }}
+        onDeny={async () => {
+          await update("window_context_allowed", "false");
+          setCtxPermOpen(false);
+        }}
+      />
+    )}
     </>
   );
 }

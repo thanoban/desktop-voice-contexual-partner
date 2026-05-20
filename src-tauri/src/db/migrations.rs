@@ -100,6 +100,14 @@ pub fn run(conn: &Connection) -> anyhow::Result<()> {
         ")?;
     }
 
+    if version < 6 {
+        conn.execute_batch("
+            INSERT OR IGNORE INTO settings VALUES ('window_context_allowed', 'unset');
+
+            INSERT INTO schema_version VALUES (6);
+        ")?;
+    }
+
     // Future migrations go here as `if version < N { ... }` blocks.
     // Never edit a migration that has already been applied.
 

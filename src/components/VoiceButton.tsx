@@ -1,6 +1,6 @@
-import { useEffect, useCallback, useRef } from "react";
+import { useEffect, useCallback } from "react";
 import { useChatStore } from "@/store/chatStore";
-import { startListening, stopListening, stopSpeaking, sendMessage, onPttStart, onPttEnd } from "@/lib/tauri";
+import { startListening, stopListening, stopSpeaking, sendMessage, onPttToggle } from "@/lib/tauri";
 
 interface Props {
   disabled?: boolean;
@@ -16,105 +16,71 @@ export function VoiceButton({ disabled, voiceReady = true, onNeedsSetup }: Props
   const setProcessing = useChatStore((s) => s.setProcessing);
   const addMessage    = useChatStore((s) => s.addMessage);
 
-  const holdStart  = useRef<number>(0);
-  const isHolding  = useRef<boolean>(false);
-
   const state: "idle" | "listening" | "processing" | "speaking" = isSpeaking
     ? "speaking"
-    : isProcessing
-    ? "processing"
-    : isListening
-    ? "listening"
+    : isProcessing ? "processing"
+    : isListening  ? "listening"
     : "idle";
 
-  // ── Interrupt companion speech ────────────────────────────────────────────
-  const handleInterrupt = useCallback(async () => {
-    if (isSpeaking) await stopSpeaking().catch(() => null);
-  }, [isSpeaking]);
+  // ── Toggle: click once to start, click again to stop & send ──────────────
+  const handleToggle = useCallback(async () => {
+    if (disabled) return;
 
-  // ── PTT begin ────────────────────────────────────────────────────────────
-  const handlePTTStart = useCallback(async () => {
-    if (disabled || isProcessing || isHolding.current) return;
-    if (isSpeaking) { handleInterrupt(); return; }
-    if (!voiceReady) { onNeedsSetup?.(); return; }
-
-    isHolding.current = true;
-    holdStart.current = Date.now();
-    setListening(true);
-
-    try {
-      await startListening();
-    } catch (e) {
-      setListening(false);
-      isHolding.current = false;
-      // Surface config errors as a chat message so the user can act on them
-      addMessage({ role: "assistant", content: `[Voice setup needed: ${e}]` });
-    }
-  }, [disabled, isProcessing, isSpeaking, voiceReady, onNeedsSetup, setListening, addMessage, handleInterrupt]);
-
-  // ── PTT end ──────────────────────────────────────────────────────────────
-  const handlePTTEnd = useCallback(async () => {
-    if (!isHolding.current) return;
-    isHolding.current = false;
-
-    const held = Date.now() - holdStart.current;
-    setListening(false);
-
-    if (held < 300) {
-      // Too short — silently cancel
-      try { await stopListening(); } catch { /* ignore */ }
+    // Interrupt TTS if speaking
+    if (isSpeaking) {
+      await stopSpeaking().catch(() => null);
       return;
     }
 
-    setProcessing(true);
-    try {
-      const transcript = await stopListening();
-      if (!transcript || !transcript.trim()) {
-        setProcessing(false);
-        return;
-      }
-      const text = transcript.trim();
-      addMessage({ role: "user", content: text });
-      await sendMessage(text);
-    } catch (e) {
-      addMessage({ role: "assistant", content: `[Error: ${e}]` });
-      setProcessing(false);
-    }
-  }, [setListening, setProcessing, addMessage]);
+    if (isProcessing) return;
 
-  // ── Keyboard PTT (Space bar, window-focused) ─────────────────────────────
+    if (!isListening) {
+      // ── Start ──
+      if (!voiceReady) { onNeedsSetup?.(); return; }
+      setListening(true);
+      try {
+        await startListening();
+      } catch (e) {
+        setListening(false);
+        addMessage({ role: "assistant", content: `[Voice setup needed: ${e}]` });
+      }
+    } else {
+      // ── Stop & send ──
+      setListening(false);
+      setProcessing(true);
+      try {
+        const transcript = await stopListening();
+        if (!transcript?.trim()) { setProcessing(false); return; }
+        const text = transcript.trim();
+        addMessage({ role: "user", content: text });
+        await sendMessage(text);
+      } catch (e) {
+        addMessage({ role: "assistant", content: `[Error: ${e}]` });
+        setProcessing(false);
+      }
+    }
+  }, [disabled, isListening, isProcessing, isSpeaking, voiceReady, onNeedsSetup, setListening, setProcessing, addMessage]);
+
+  // ── Space bar toggle (window focused) ────────────────────────────────────
   useEffect(() => {
-    const down = (e: KeyboardEvent) => {
+    const handler = (e: KeyboardEvent) => {
       if (e.code === "Space" && !e.repeat && document.activeElement === document.body) {
         e.preventDefault();
-        handlePTTStart();
+        handleToggle();
       }
     };
-    const up = (e: KeyboardEvent) => {
-      if (e.code === "Space") {
-        e.preventDefault();
-        handlePTTEnd();
-      }
-    };
-    window.addEventListener("keydown", down);
-    window.addEventListener("keyup", up);
-    return () => {
-      window.removeEventListener("keydown", down);
-      window.removeEventListener("keyup", up);
-    };
-  }, [handlePTTStart, handlePTTEnd]);
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [handleToggle]);
 
-  // ── Global PTT shortcut (Alt+Space, works from tray/background) ───────────
+  // ── Global Alt+Space toggle (works from tray / background) ───────────────
   useEffect(() => {
-    const unlisteners: Array<() => void> = [];
-    Promise.all([
-      onPttStart(() => handlePTTStart()),
-      onPttEnd(() => handlePTTEnd()),
-    ]).then((fns) => unlisteners.push(...fns));
-    return () => unlisteners.forEach((fn) => fn());
-  }, [handlePTTStart, handlePTTEnd]);
+    let unlisten: (() => void) | null = null;
+    onPttToggle(() => handleToggle()).then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
+  }, [handleToggle]);
 
-  // ── Render ─────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────
   const colors: Record<typeof state, string> = {
     idle:       "var(--bg-elevated)",
     listening:  "var(--accent)",
@@ -123,8 +89,8 @@ export function VoiceButton({ disabled, voiceReady = true, onNeedsSetup }: Props
   };
 
   const labels: Record<typeof state, string> = {
-    idle:       "Hold Space to Speak",
-    listening:  "Listening…",
+    idle:       "Press Space to Speak",
+    listening:  "Listening… press Space to send",
     processing: "Thinking…",
     speaking:   "Tap to Interrupt",
   };
@@ -132,9 +98,7 @@ export function VoiceButton({ disabled, voiceReady = true, onNeedsSetup }: Props
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "10px" }}>
       <button
-        onMouseDown={handlePTTStart}
-        onMouseUp={handlePTTEnd}
-        onMouseLeave={() => { if (isHolding.current) handlePTTEnd(); }}
+        onClick={handleToggle}
         disabled={disabled}
         type="button"
         style={{

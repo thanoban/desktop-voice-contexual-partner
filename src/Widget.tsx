@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useChatStore } from "@/store/chatStore";
 import { useOllamaStore } from "@/store/ollamaStore";
@@ -8,8 +8,7 @@ import {
   stopListening,
   sendMessage,
   expandToMain,
-  onPttStart,
-  onPttEnd,
+  onPttToggle,
   onChatToken,
   onChatDone,
   onChatError,
@@ -34,9 +33,6 @@ export function Widget() {
     addMessage,
   } = useChatStore();
 
-  const holdStart = useRef<number>(0);
-  const isHolding = useRef<boolean>(false);
-
   useEffect(() => { load(); }, [load]);
   useEffect(() => { const stop = startPolling(); return stop; }, [startPolling]);
 
@@ -53,64 +49,44 @@ export function Widget() {
     return () => uns.forEach((f) => f());
   }, [appendToken, finalizeStream, setProcessing, setSpeaking]);
 
-  // ── PTT ──────────────────────────────────────────────────────────────────
+  // ── Toggle: click/Space once to start, again to stop & send ─────────────
 
-  const handlePTTStart = useCallback(async () => {
-    if (isProcessing || isHolding.current) return;
-    isHolding.current = true;
-    holdStart.current = Date.now();
-    setListening(true);
-    try {
-      await startListening();
-    } catch {
+  const handleToggle = useCallback(async () => {
+    if (isProcessing) return;
+    if (!isListening) {
+      setListening(true);
+      try {
+        await startListening();
+      } catch {
+        setListening(false);
+      }
+    } else {
       setListening(false);
-      isHolding.current = false;
+      setProcessing(true);
+      try {
+        const text = (await stopListening()).trim();
+        if (!text) { setProcessing(false); return; }
+        addMessage({ role: "user", content: text });
+        await sendMessage(text);
+      } catch {
+        setProcessing(false);
+      }
     }
-  }, [isProcessing, setListening]);
-
-  const handlePTTEnd = useCallback(async () => {
-    if (!isHolding.current) return;
-    isHolding.current = false;
-    const held = Date.now() - holdStart.current;
-    setListening(false);
-    if (held < 300) {
-      try { await stopListening(); } catch { /* ignore */ }
-      return;
-    }
-    setProcessing(true);
-    try {
-      const text = (await stopListening()).trim();
-      if (!text) { setProcessing(false); return; }
-      addMessage({ role: "user", content: text });
-      await sendMessage(text);
-    } catch {
-      setProcessing(false);
-    }
-  }, [setListening, setProcessing, addMessage]);
+  }, [isListening, isProcessing, setListening, setProcessing, addMessage]);
 
   useEffect(() => {
-    const down = (e: KeyboardEvent) => {
-      if (e.code === "Space" && !e.repeat) { e.preventDefault(); handlePTTStart(); }
+    const handler = (e: KeyboardEvent) => {
+      if (e.code === "Space" && !e.repeat) { e.preventDefault(); handleToggle(); }
     };
-    const up = (e: KeyboardEvent) => {
-      if (e.code === "Space") { e.preventDefault(); handlePTTEnd(); }
-    };
-    window.addEventListener("keydown", down);
-    window.addEventListener("keyup", up);
-    return () => {
-      window.removeEventListener("keydown", down);
-      window.removeEventListener("keyup", up);
-    };
-  }, [handlePTTStart, handlePTTEnd]);
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [handleToggle]);
 
   useEffect(() => {
-    const uns: Array<() => void> = [];
-    Promise.all([
-      onPttStart(() => handlePTTStart()),
-      onPttEnd(() => handlePTTEnd()),
-    ]).then((fns) => uns.push(...fns));
-    return () => uns.forEach((f) => f());
-  }, [handlePTTStart, handlePTTEnd]);
+    let unlisten: (() => void) | null = null;
+    onPttToggle(() => handleToggle()).then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
+  }, [handleToggle]);
 
   // ── Status text ───────────────────────────────────────────────────────────
 
@@ -123,7 +99,7 @@ export function Widget() {
   const preview = (streamingContent || lastAssistant?.content || "").slice(-80);
 
   const statusText = {
-    idle:       ollamaStatus === "connected" ? "Hold Space to speak" : "Ollama not running",
+    idle:       ollamaStatus === "connected" ? "Press Space to speak" : "Ollama not running",
     listening:  "Listening…",
     processing: "Thinking…",
     speaking:   preview || "Speaking…",
@@ -184,11 +160,9 @@ export function Widget() {
       {/* Mic button */}
       <button
         type="button"
-        onMouseDown={handlePTTStart}
-        onMouseUp={handlePTTEnd}
-        onMouseLeave={() => { if (isHolding.current) handlePTTEnd(); }}
-        aria-label={isListening ? "Listening" : "Hold to speak"}
-        title="Hold to speak (Space)"
+        onClick={handleToggle}
+        aria-label={isListening ? "Click to stop" : "Click to speak"}
+        title={isListening ? "Click to stop & send (Space)" : "Click to speak (Space)"}
         style={{
           width: "28px",
           height: "28px",

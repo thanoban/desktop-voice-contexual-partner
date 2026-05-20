@@ -23,6 +23,7 @@ pub struct Settings {
     pub voice_threshold_db: String,
     // Context sharing (M1)
     pub window_context_auto: String,
+    pub window_context_allowed: String,
     // Voice tone (M1.1)
     pub voice_speed: String,
     pub voice_expressiveness: String,
@@ -46,7 +47,8 @@ impl Default for Settings {
             whisper_binary:      String::new(),
             whisper_model:       String::new(),
             voice_threshold_db:  "-30".into(),
-            window_context_auto: "false".into(),
+            window_context_auto:    "false".into(),
+            window_context_allowed: "unset".into(),
             voice_speed:          "1.0".into(),
             voice_expressiveness: "0.667".into(),
             embedding_model:       "nomic-embed-text".into(),
@@ -76,8 +78,9 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<Settings, String> {
         window_context_auto:  pairs.get("window_context_auto").cloned().unwrap_or(d.window_context_auto),
         voice_speed:          pairs.get("voice_speed").cloned().unwrap_or(d.voice_speed),
         voice_expressiveness: pairs.get("voice_expressiveness").cloned().unwrap_or(d.voice_expressiveness),
-        embedding_model:      pairs.get("embedding_model").cloned().unwrap_or(d.embedding_model),
-        custom_system_prompt: pairs.get("custom_system_prompt").cloned().unwrap_or(d.custom_system_prompt),
+        embedding_model:         pairs.get("embedding_model").cloned().unwrap_or(d.embedding_model),
+        custom_system_prompt:    pairs.get("custom_system_prompt").cloned().unwrap_or(d.custom_system_prompt),
+        window_context_allowed:  pairs.get("window_context_allowed").cloned().unwrap_or(d.window_context_allowed),
     })
 }
 

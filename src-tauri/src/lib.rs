@@ -175,14 +175,9 @@ pub fn run() {
             // ── Global PTT shortcut: Alt+Space ────────────────────────────────
             let ptt = Shortcut::new(Some(Modifiers::ALT), Code::Space);
             app.global_shortcut().on_shortcut(ptt, |app_handle, _shortcut, event| {
-                match event.state {
-                    ShortcutState::Pressed => {
-                        show_window(app_handle);
-                        let _ = app_handle.emit("shortcut:ptt:start", ());
-                    }
-                    ShortcutState::Released => {
-                        let _ = app_handle.emit("shortcut:ptt:end", ());
-                    }
+                if event.state == ShortcutState::Pressed {
+                    show_window(app_handle);
+                    let _ = app_handle.emit("shortcut:ptt:toggle", ());
                 }
             })?;
 
