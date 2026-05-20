@@ -89,6 +89,17 @@ pub fn run(conn: &Connection) -> anyhow::Result<()> {
         ")?;
     }
 
+    if version < 5 {
+        conn.execute_batch("
+            ALTER TABLE memories ADD COLUMN source_file TEXT;
+            CREATE INDEX IF NOT EXISTS idx_memories_source ON memories(source_file);
+
+            INSERT OR IGNORE INTO settings VALUES ('custom_system_prompt', '');
+
+            INSERT INTO schema_version VALUES (5);
+        ")?;
+    }
+
     // Future migrations go here as `if version < N { ... }` blocks.
     // Never edit a migration that has already been applied.
 

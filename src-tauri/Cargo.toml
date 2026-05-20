@@ -50,6 +50,10 @@ keyring = "3"
 # Platform dirs (voice model path resolution)
 dirs-next = "2"
 
+# Document ingestion (M3)
+pdf-extract = "0.7"
+zip = "2"
+
 [profile.dev]
 incremental = true
 

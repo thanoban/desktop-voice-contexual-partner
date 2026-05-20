@@ -57,7 +57,7 @@ pub async fn send_message(
 
     // DB work — all sync, no .await held
     let (session_id, model, endpoint, personality, name, piper_binary, piper_voice,
-         voice_speed, voice_expressiveness, window_context_auto, embedding_model) = {
+         voice_speed, voice_expressiveness, window_context_auto, embedding_model, custom_system_prompt) = {
         let conn = state.db.lock().map_err(|e| e.to_string())?;
         let sid = db::ensure_session(&conn).map_err(|e| e.to_string())?;
         db::save_turn(&conn, &sid, "user", &content).map_err(|e| e.to_string())?;
@@ -69,9 +69,10 @@ pub async fn send_message(
         let voice    = db::get_setting(&conn, "piper_voice").unwrap_or_else(|| "en_US-amy-medium".into());
         let speed    = db::get_setting(&conn, "voice_speed").unwrap_or_else(|| "1.0".into());
         let expr     = db::get_setting(&conn, "voice_expressiveness").unwrap_or_else(|| "0.667".into());
-        let ctx_auto = db::get_setting(&conn, "window_context_auto").unwrap_or_else(|| "false".into());
-        let emb_mdl  = db::get_setting(&conn, "embedding_model").unwrap_or_else(|| "nomic-embed-text".into());
-        (sid, model, endpoint, persona, name, piper, voice, speed, expr, ctx_auto, emb_mdl)
+        let ctx_auto    = db::get_setting(&conn, "window_context_auto").unwrap_or_else(|| "false".into());
+        let emb_mdl     = db::get_setting(&conn, "embedding_model").unwrap_or_else(|| "nomic-embed-text".into());
+        let custom_sys  = db::get_setting(&conn, "custom_system_prompt").unwrap_or_default();
+        (sid, model, endpoint, persona, name, piper, voice, speed, expr, ctx_auto, emb_mdl, custom_sys)
     }; // MutexGuard dropped here
 
     // Build recent context
@@ -134,7 +135,13 @@ pub async fn send_message(
         }
     }; // MutexGuard dropped
 
-    let mut system_prompt = personality_prompt(&personality, &name);
+    // Custom system prompt overrides personality presets when non-empty
+    let mut system_prompt = if custom_system_prompt.trim().is_empty() {
+        personality_prompt(&personality, &name)
+    } else {
+        custom_system_prompt.trim().to_string()
+    };
+
     if let Some(ref mem) = memory_block {
         system_prompt.push_str("\n\n");
         system_prompt.push_str(mem);

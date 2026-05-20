@@ -23,6 +23,7 @@ const defaults: Settings = {
   voice_speed: "1.0",
   voice_expressiveness: "0.667",
   embedding_model: "nomic-embed-text",
+  custom_system_prompt: "",
 };
 
 export const useSettingsStore = create<SettingsState>((set) => ({

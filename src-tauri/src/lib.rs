@@ -5,6 +5,7 @@ mod db;
 mod embed;
 mod llm;
 mod memory;
+mod rag;
 mod safety;
 mod summarize;
 mod tts;
@@ -98,6 +99,11 @@ pub fn run() {
             commands::memory::get_memory_count,
             commands::memory::delete_memory,
             commands::memory::forget_all,
+            // RAG — document ingestion (M3)
+            commands::rag::pick_document,
+            commands::rag::ingest_document,
+            commands::rag::list_documents,
+            commands::rag::delete_document,
             // Settings
             commands::settings::get_settings,
             commands::settings::update_setting,

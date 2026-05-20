@@ -28,6 +28,8 @@ pub struct Settings {
     pub voice_expressiveness: String,
     // Memory (M2)
     pub embedding_model: String,
+    // Custom prompt (M3)
+    pub custom_system_prompt: String,
 }
 
 impl Default for Settings {
@@ -47,7 +49,8 @@ impl Default for Settings {
             window_context_auto: "false".into(),
             voice_speed:          "1.0".into(),
             voice_expressiveness: "0.667".into(),
-            embedding_model:      "nomic-embed-text".into(),
+            embedding_model:       "nomic-embed-text".into(),
+            custom_system_prompt:  String::new(),
         }
     }
 }
@@ -74,6 +77,7 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<Settings, String> {
         voice_speed:          pairs.get("voice_speed").cloned().unwrap_or(d.voice_speed),
         voice_expressiveness: pairs.get("voice_expressiveness").cloned().unwrap_or(d.voice_expressiveness),
         embedding_model:      pairs.get("embedding_model").cloned().unwrap_or(d.embedding_model),
+        custom_system_prompt: pairs.get("custom_system_prompt").cloned().unwrap_or(d.custom_system_prompt),
     })
 }
 

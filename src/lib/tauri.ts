@@ -24,6 +24,7 @@ export interface Settings {
   voice_speed: string;
   voice_expressiveness: string;
   embedding_model: string;
+  custom_system_prompt: string;
 }
 
 export interface OllamaStatus {
@@ -163,3 +164,43 @@ export const deleteMemory = (id: string): Promise<void> =>
 
 export const forgetAll = (): Promise<void> =>
   invoke("forget_all");
+
+// ── RAG — document ingestion (M3) ────────────────────────────────────────────
+
+export interface DocumentInfo {
+  source_file: string;
+  chunk_count: number;
+  ingested_at: number;
+}
+
+export interface IngestProgress {
+  source: string;
+  current: number;
+  total: number;
+}
+
+export interface IngestResult {
+  source: string;
+  chunks: number;
+}
+
+export const pickDocument = (): Promise<string | null> =>
+  invoke("pick_document");
+
+export const ingestDocument = (path: string): Promise<string> =>
+  invoke("ingest_document", { path });
+
+export const listDocuments = (): Promise<DocumentInfo[]> =>
+  invoke("list_documents");
+
+export const deleteDocument = (sourceFile: string): Promise<void> =>
+  invoke("delete_document", { sourceFile });
+
+export const onRagProgress = (cb: (p: IngestProgress) => void): Promise<UnlistenFn> =>
+  listen<IngestProgress>("rag:progress", (e) => cb(e.payload));
+
+export const onRagDone = (cb: (r: IngestResult) => void): Promise<UnlistenFn> =>
+  listen<IngestResult>("rag:done", (e) => cb(e.payload));
+
+export const onRagError = (cb: (msg: string) => void): Promise<UnlistenFn> =>
+  listen<string>("rag:error", (e) => cb(e.payload));

@@ -3,6 +3,7 @@ import { useSettingsStore } from "@/store/settingsStore";
 import { useOllamaStore } from "@/store/ollamaStore";
 import { getAudioDevices, getMemoryCount, type AudioDevice } from "@/lib/tauri";
 import { MemoryPanel } from "@/components/MemoryPanel";
+import { DocumentPanel } from "@/components/DocumentPanel";
 
 const PERSONALITIES = [
   { id: "gentle",    label: "Gentle",    desc: "Warm, patient, softly encouraging" },
@@ -30,6 +31,7 @@ export function SettingsPanel({ open, onClose }: Props) {
   const [audioDevices, setAudioDevices] = useState<AudioDevice[]>([]);
   const [memoryCount, setMemoryCount] = useState(0);
   const [memoryPanelOpen, setMemoryPanelOpen] = useState(false);
+  const [documentPanelOpen, setDocumentPanelOpen] = useState(false);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setLocalEndpoint(settings.endpoint); }, [settings.endpoint]);
@@ -102,6 +104,23 @@ export function SettingsPanel({ open, onClose }: Props) {
               </button>
             ))}
           </div>
+          <Label>Custom system prompt</Label>
+          <textarea
+            aria-label="Custom system prompt"
+            value={settings.custom_system_prompt}
+            onChange={(e) => update("custom_system_prompt", e.target.value)}
+            placeholder="Leave blank to use the personality preset above…"
+            rows={4}
+            style={{
+              ...inputStyle,
+              resize: "vertical",
+              fontFamily: "inherit",
+              lineHeight: "1.5",
+            }}
+          />
+          <p style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+            Overrides the personality preset entirely when non-empty.
+          </p>
         </Section>
 
         {/* Voice */}
@@ -238,6 +257,29 @@ export function SettingsPanel({ open, onClose }: Props) {
           )}
         </Section>
 
+        {/* Documents */}
+        <Section title="Documents">
+          <p style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+            Upload PDF, DOCX, TXT, or MD files. Chunks are embedded and searched alongside memories.
+          </p>
+          <button
+            type="button"
+            onClick={() => setDocumentPanelOpen(true)}
+            style={{
+              background: "transparent",
+              border: "1px solid var(--text-dim)",
+              borderRadius: "6px",
+              color: "var(--text-muted)",
+              fontSize: "12px",
+              padding: "5px 10px",
+              cursor: "pointer",
+              alignSelf: "flex-start",
+            }}
+          >
+            Manage documents
+          </button>
+        </Section>
+
         {/* Memory */}
         <Section title="Memory">
           <Label>Embedding model</Label>
@@ -277,6 +319,7 @@ export function SettingsPanel({ open, onClose }: Props) {
       </div>
     </div>
     <MemoryPanel open={memoryPanelOpen} onClose={() => setMemoryPanelOpen(false)} />
+    <DocumentPanel open={documentPanelOpen} onClose={() => setDocumentPanelOpen(false)} />
     </>
   );
 }
