@@ -40,6 +40,17 @@ pub struct SharedContext {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+fn toggle_named_window(app: &AppHandle, label: &str) {
+    if let Some(win) = app.get_webview_window(label) {
+        if win.is_visible().unwrap_or(false) {
+            let _ = win.hide();
+        } else {
+            let _ = win.show();
+            let _ = win.set_focus();
+        }
+    }
+}
+
 fn toggle_window(app: &AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
         if win.is_visible().unwrap_or(false) {
@@ -100,16 +111,33 @@ pub fn run() {
                 context: Mutex::new(SharedContext::default()),
             });
 
-            // ── System tray ───────────────────────────────────────────────────
-            let toggle_item = MenuItem::with_id(app, "toggle", "Show / Hide", true, None::<&str>)?;
-            let sep         = PredefinedMenuItem::separator(app)?;
-            let quit_item   = MenuItem::with_id(app, "quit", "Quit VoicePartner", true, None::<&str>)?;
-            let menu        = Menu::with_items(app, &[&toggle_item, &sep, &quit_item])?;
+            // ── Widget window ─────────────────────────────────────────────────
+            tauri::WebviewWindowBuilder::new(
+                app,
+                "widget",
+                tauri::WebviewUrl::App("?widget=1".into()),
+            )
+            .title("VoicePartner")
+            .inner_size(400.0, 58.0)
+            .always_on_top(true)
+            .decorations(false)
+            .transparent(true)
+            .resizable(false)
+            .skip_taskbar(true)
+            .visible(false)
+            .build()?;
 
+            // ── System tray ───────────────────────────────────────────────────
             let tray_icon = app
                 .default_window_icon()
                 .cloned()
                 .unwrap_or_else(|| tauri::image::Image::new_owned(vec![0, 0, 0, 0], 1, 1));
+
+            let widget_item = MenuItem::with_id(app, "widget", "Show / Hide Widget",  true, None::<&str>)?;
+            let main_item   = MenuItem::with_id(app, "main",   "Open VoicePartner",   true, None::<&str>)?;
+            let sep         = PredefinedMenuItem::separator(app)?;
+            let quit_item   = MenuItem::with_id(app, "quit",   "Quit VoicePartner",   true, None::<&str>)?;
+            let menu        = Menu::with_items(app, &[&widget_item, &main_item, &sep, &quit_item])?;
 
             let _tray = TrayIconBuilder::new()
                 .icon(tray_icon)
@@ -122,11 +150,12 @@ pub fn run() {
                         ..
                     } = event
                     {
-                        toggle_window(tray.app_handle());
+                        toggle_named_window(tray.app_handle(), "widget");
                     }
                 })
                 .on_menu_event(|app, event| match event.id.as_ref() {
-                    "toggle" => toggle_window(app),
+                    "widget" => toggle_named_window(app, "widget"),
+                    "main"   => toggle_window(app),
                     "quit"   => app.exit(0),
                     _        => {}
                 })
@@ -191,6 +220,7 @@ pub fn run() {
             // System
             commands::system::get_ollama_status,
             commands::system::list_models,
+            commands::system::expand_to_main,
         ])
         .run(tauri::generate_context!())
         .expect("Error running VoicePartner");

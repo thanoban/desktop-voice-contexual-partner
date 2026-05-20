@@ -98,6 +98,15 @@ body {
   animation: fade-in 0.3s ease-out forwards;
 }
 
+/* Widget window: transparent body so border-radius shows */
+html.widget-mode,
+html.widget-mode body,
+html.widget-mode #root {
+  background: transparent !important;
+  overflow: visible;
+  height: 100%;
+}
+
 .cursor-blink::after {
   content: "▊";
   animation: blink 1s step-end infinite;

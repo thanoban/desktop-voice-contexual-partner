@@ -2,7 +2,7 @@ use crate::db;
 use crate::llm::client::{self, OllamaModel};
 use crate::AppState;
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 #[derive(Debug, Serialize)]
 pub struct OllamaStatus {
@@ -61,4 +61,12 @@ pub async fn list_models(state: State<'_, AppState>) -> Result<Vec<OllamaStatusM
         .await
         .map(|v| v.into_iter().map(Into::into).collect())
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn expand_to_main(app: AppHandle) {
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.show();
+        let _ = win.set_focus();
+    }
 }

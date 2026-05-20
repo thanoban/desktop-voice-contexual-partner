@@ -205,6 +205,11 @@ export const onRagDone = (cb: (r: IngestResult) => void): Promise<UnlistenFn> =>
 export const onRagError = (cb: (msg: string) => void): Promise<UnlistenFn> =>
   listen<string>("rag:error", (e) => cb(e.payload));
 
+// ── Widget commands (M5) ────────────────────────────────────────────────────
+
+export const expandToMain = (): Promise<void> =>
+  invoke("expand_to_main");
+
 // ── Global PTT shortcut events (M5) ─────────────────────────────────────────
 
 export const onPttStart = (cb: () => void): Promise<UnlistenFn> =>
