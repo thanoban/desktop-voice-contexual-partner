@@ -270,6 +270,9 @@ export const onDownloadError = (
 export const expandToMain = (): Promise<void> =>
   invoke("expand_to_main");
 
+export const exportConversation = (content: string, filename: string): Promise<void> =>
+  invoke("export_conversation", { content, filename });
+
 // ── Global PTT shortcut events (M5) ─────────────────────────────────────────
 
 export const onPttToggle = (cb: () => void): Promise<UnlistenFn> =>

@@ -4,9 +4,11 @@ import { useOllamaStore } from "@/store/ollamaStore";
 
 const PERSONALITIES = [
   { id: "gentle",    label: "Gentle",    desc: "Warm, patient, softly encouraging" },
-  { id: "playful",   label: "Playful",   desc: "Light-hearted, witty, upbeat" },
   { id: "calm",      label: "Calm",      desc: "Steady, measured, quietly supportive" },
+  { id: "playful",   label: "Playful",   desc: "Light-hearted, witty, upbeat" },
   { id: "energetic", label: "Energetic", desc: "Enthusiastic, lively, motivating" },
+  { id: "mentor",    label: "Mentor",    desc: "Wise, guiding, nurtures your growth" },
+  { id: "caring",    label: "Caring",    desc: "Deeply empathetic, makes you feel heard" },
 ];
 
 const STEPS = ["age", "disclosure", "companion", "connect"] as const;

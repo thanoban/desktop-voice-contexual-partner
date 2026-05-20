@@ -7,6 +7,7 @@ import { StatusBar } from "@/components/StatusBar";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { SafetyPanel } from "@/components/SafetyPanel";
 import { ModelSetupPanel } from "@/components/ModelSetupPanel";
+import { AboutDialog } from "@/components/AboutDialog";
 import { Onboarding } from "@/components/Onboarding";
 import { useChatStore } from "@/store/chatStore";
 import { useSettingsStore } from "@/store/settingsStore";
@@ -29,6 +30,7 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [safetyVisible, setSafetyVisible] = useState(false);
   const [showVoiceSetup, setShowVoiceSetup] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const [ctx, setCtx] = useState<ContextStatus>({ sharing: false });
 
   const { settings, load: loadSettings, loaded } = useSettingsStore();
@@ -65,6 +67,22 @@ export default function App() {
 
     return () => unlisteners.forEach((fn) => fn());
   }, [appendToken, finalizeStream, setProcessing, setSpeaking, addMessage]);
+
+  // Global keyboard shortcut: ? opens About, Esc closes all panels
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "?" && document.activeElement === document.body) {
+        setAboutOpen(true);
+      }
+      if (e.key === "Escape") {
+        setSettingsOpen(false);
+        setAboutOpen(false);
+        setShowVoiceSetup(false);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   // Send greeting when Ollama connects (once per session)
   const [greeted, setGreeted] = useState(false);
@@ -119,6 +137,15 @@ export default function App() {
             title={ctx.sharing ? `Sharing: ${ctx.window_title ?? "active window"}` : "Share what you're working on"}
           >
             ◉
+          </button>
+          <button
+            type="button"
+            onClick={() => setAboutOpen(true)}
+            style={{ ...titleBtnStyle, fontSize: "13px" }}
+            aria-label="About"
+            title="About VoicePartner (press ?)"
+          >
+            ?
           </button>
           <button
             type="button"
@@ -185,6 +212,7 @@ export default function App() {
       {showVoiceSetup && (
         <ModelSetupPanel onDone={() => setShowVoiceSetup(false)} />
       )}
+      {aboutOpen && <AboutDialog onClose={() => setAboutOpen(false)} />}
     </div>
   );
 }

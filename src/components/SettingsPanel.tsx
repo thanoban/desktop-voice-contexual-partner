@@ -1,11 +1,13 @@
 import { useState, useEffect } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useOllamaStore } from "@/store/ollamaStore";
-import { getAudioDevices, getMemoryCount, pickFile, type AudioDevice } from "@/lib/tauri";
+import { getAudioDevices, getMemoryCount, pickFile, exportConversation, type AudioDevice } from "@/lib/tauri";
+import { useChatStore } from "@/store/chatStore";
 import { MemoryPanel } from "@/components/MemoryPanel";
 import { DocumentPanel } from "@/components/DocumentPanel";
 import { ContextPermissionDialog } from "@/components/ContextPermissionDialog";
 import { ModelSetupPanel } from "@/components/ModelSetupPanel";
+import { AboutDialog } from "@/components/AboutDialog";
 import { VoiceGallery, VOICE_CATALOG } from "@/components/VoiceGallery";
 
 const PERSONALITIES = [
@@ -33,6 +35,8 @@ export function SettingsPanel({ open, onClose }: Props) {
   const [ctxPermOpen, setCtxPermOpen] = useState(false);
   const [setupPanelOpen, setSetupPanelOpen] = useState(false);
   const [voiceGalleryOpen, setVoiceGalleryOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const messages = useChatStore((s) => s.messages);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setLocalEndpoint(settings.endpoint); }, [settings.endpoint]);
@@ -370,8 +374,55 @@ export function SettingsPanel({ open, onClose }: Props) {
           </div>
         </Section>
 
-        <div style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "auto" }}>
-          VoicePartner v0.1.0 · AGPL-3.0 · All data stays on your machine
+        {/* Footer actions */}
+        <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: "8px" }}>
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button
+              type="button"
+              onClick={async () => {
+                if (messages.length === 0) return;
+                const lines = messages.map((m) => {
+                  const ts = new Date(m.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+                  const who = m.role === "user" ? "You" : settings.companion_name;
+                  return `**${who}** (${ts})\n${m.content}`;
+                });
+                const header = `# VoicePartner Conversation\nExported: ${new Date().toLocaleDateString()}\n\n---\n\n`;
+                await exportConversation(header + lines.join("\n\n---\n\n"), "conversation.md");
+              }}
+              disabled={messages.length === 0}
+              style={{
+                flex: 1,
+                background: "transparent",
+                border: "1px solid var(--text-dim)",
+                borderRadius: "6px",
+                color: messages.length === 0 ? "var(--text-dim)" : "var(--text-muted)",
+                fontSize: "12px",
+                padding: "7px 10px",
+                cursor: messages.length === 0 ? "default" : "pointer",
+              }}
+            >
+              Export chat
+            </button>
+            <button
+              type="button"
+              onClick={() => setAboutOpen(true)}
+              style={{
+                flex: 1,
+                background: "transparent",
+                border: "1px solid var(--text-dim)",
+                borderRadius: "6px",
+                color: "var(--text-muted)",
+                fontSize: "12px",
+                padding: "7px 10px",
+                cursor: "pointer",
+              }}
+            >
+              About v1.0.0
+            </button>
+          </div>
+          <div style={{ fontSize: "10px", color: "var(--text-muted)", opacity: 0.6, textAlign: "center" }}>
+            AGPL-3.0 · All data stays on your machine
+          </div>
         </div>
       </div>
     </div>
@@ -379,6 +430,7 @@ export function SettingsPanel({ open, onClose }: Props) {
     <DocumentPanel open={documentPanelOpen} onClose={() => setDocumentPanelOpen(false)} />
     {setupPanelOpen && <ModelSetupPanel onDone={() => setSetupPanelOpen(false)} />}
     {voiceGalleryOpen && <VoiceGallery onDone={() => setVoiceGalleryOpen(false)} />}
+    {aboutOpen && <AboutDialog onClose={() => setAboutOpen(false)} />}
     {ctxPermOpen && (
       <ContextPermissionDialog
         onAllow={async () => {

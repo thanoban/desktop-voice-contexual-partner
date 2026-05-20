@@ -222,6 +222,7 @@ pub fn run() {
             commands::system::get_ollama_status,
             commands::system::list_models,
             commands::system::expand_to_main,
+            commands::system::export_conversation,
         ])
         .run(tauri::generate_context!())
         .expect("Error running VoicePartner");
