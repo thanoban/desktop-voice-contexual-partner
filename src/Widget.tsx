@@ -52,6 +52,7 @@ export function Widget() {
   // ── Toggle: click/Space once to start, again to stop & send ─────────────
 
   const handleToggle = useCallback(async () => {
+    if (ollamaStatus !== "connected") return;
     if (isProcessing) return;
     if (!isListening) {
       setListening(true);

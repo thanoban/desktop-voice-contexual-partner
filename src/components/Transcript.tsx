@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useChatStore, type Message } from "@/store/chatStore";
 import { useSettingsStore } from "@/store/settingsStore";
+import { useOllamaStore } from "@/store/ollamaStore";
 
 function Turn({ msg, companionName }: { msg: Message; companionName: string }) {
   const isUser = msg.role === "user";
@@ -74,6 +75,7 @@ export function Transcript() {
   const isStreaming = useChatStore((s) => s.isStreaming);
   const isProcessing = useChatStore((s) => s.isProcessing);
   const companionName = useSettingsStore((s) => s.settings.companion_name);
+  const ollamaStatus = useOllamaStore((s) => s.status);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -103,10 +105,34 @@ export function Transcript() {
             justifyContent: "center",
             color: "var(--text-muted)",
             gap: "8px",
+            padding: "24px",
+            textAlign: "center",
           }}
         >
           <div style={{ fontSize: "40px", opacity: 0.4 }}>✦</div>
-          <p style={{ fontSize: "14px" }}>Press and hold Space to speak</p>
+          {ollamaStatus === "connected" ? (
+            <>
+              <p style={{ fontSize: "14px" }}>Press Space to speak to {companionName}</p>
+              <p style={{ fontSize: "12px", opacity: 0.6 }}>Or type a message below</p>
+            </>
+          ) : ollamaStatus === "connecting" ? (
+            <p style={{ fontSize: "14px" }}>Connecting to Ollama…</p>
+          ) : (
+            <>
+              <p style={{ fontSize: "14px" }}>Ollama is not running</p>
+              <p style={{ fontSize: "12px", opacity: 0.6, maxWidth: "240px", lineHeight: 1.5 }}>
+                Start Ollama on your machine, then it will connect automatically.
+              </p>
+              <a
+                href="https://ollama.com"
+                target="_blank"
+                rel="noreferrer noopener"
+                style={{ fontSize: "12px", color: "var(--accent)", textDecoration: "none", marginTop: "4px" }}
+              >
+                ollama.com ↗
+              </a>
+            </>
+          )}
         </div>
       )}
 

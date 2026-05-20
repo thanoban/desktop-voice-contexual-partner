@@ -17,7 +17,9 @@ export const useOllamaStore = create<OllamaState>((set) => ({
   error: null,
 
   poll: async () => {
-    set({ status: "connecting" });
+    if (useOllamaStore.getState().status !== "connected") {
+      set({ status: "connecting" });
+    }
     try {
       const s: OllamaStatus = await getOllamaStatus();
       set({

@@ -89,7 +89,7 @@ export function VoiceButton({ disabled, voiceReady = true, onNeedsSetup }: Props
   };
 
   const labels: Record<typeof state, string> = {
-    idle:       "Press Space to Speak",
+    idle:       disabled ? "Ollama not running" : "Press Space to Speak",
     listening:  "Listening… press Space to send",
     processing: "Thinking…",
     speaking:   "Tap to Interrupt",
