@@ -206,6 +206,51 @@ export const onRagDone = (cb: (r: IngestResult) => void): Promise<UnlistenFn> =>
 export const onRagError = (cb: (msg: string) => void): Promise<UnlistenFn> =>
   listen<string>("rag:error", (e) => cb(e.payload));
 
+// ── Setup / download commands (M6) ───────────────────────────────────────────
+
+export interface SetupStatus {
+  piper_ok: boolean;
+  piper_voice_ok: boolean;
+  whisper_model_ok: boolean;
+  piper_path: string;
+  whisper_model_path: string;
+}
+
+export interface DownloadProgress {
+  tool: string;
+  downloaded: number;
+  total: number;
+}
+
+export interface DownloadDone {
+  tool: string;
+  path: string;
+}
+
+export const checkSetup = (): Promise<SetupStatus> =>
+  invoke("check_setup");
+
+export const downloadTool = (tool: string): Promise<string> =>
+  invoke("download_tool", { tool });
+
+export const pickFile = (filters: string[]): Promise<string | null> =>
+  invoke("pick_file", { filters });
+
+export const onDownloadProgress = (
+  cb: (p: DownloadProgress) => void
+): Promise<UnlistenFn> =>
+  listen<DownloadProgress>("download:progress", (e) => cb(e.payload));
+
+export const onDownloadDone = (
+  cb: (d: DownloadDone) => void
+): Promise<UnlistenFn> =>
+  listen<DownloadDone>("download:done", (e) => cb(e.payload));
+
+export const onDownloadError = (
+  cb: (d: { tool: string; error: string }) => void
+): Promise<UnlistenFn> =>
+  listen<{ tool: string; error: string }>("download:error", (e) => cb(e.payload));
+
 // ── Widget commands (M5) ────────────────────────────────────────────────────
 
 export const expandToMain = (): Promise<void> =>

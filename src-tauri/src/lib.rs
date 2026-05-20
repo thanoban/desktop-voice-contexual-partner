@@ -212,6 +212,10 @@ pub fn run() {
             // Settings
             commands::settings::get_settings,
             commands::settings::update_setting,
+            // Setup / download (M6)
+            commands::setup::check_setup,
+            commands::setup::pick_file,
+            commands::setup::download_tool,
             // System
             commands::system::get_ollama_status,
             commands::system::list_models,

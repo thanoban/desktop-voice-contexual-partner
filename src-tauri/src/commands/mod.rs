@@ -3,5 +3,6 @@ pub mod context;
 pub mod memory;
 pub mod rag;
 pub mod settings;
+pub mod setup;
 pub mod system;
 pub mod voice;

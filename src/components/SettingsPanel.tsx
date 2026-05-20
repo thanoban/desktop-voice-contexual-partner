@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useOllamaStore } from "@/store/ollamaStore";
-import { getAudioDevices, getMemoryCount, type AudioDevice } from "@/lib/tauri";
+import { getAudioDevices, getMemoryCount, pickFile, type AudioDevice } from "@/lib/tauri";
 import { MemoryPanel } from "@/components/MemoryPanel";
 import { DocumentPanel } from "@/components/DocumentPanel";
 import { ContextPermissionDialog } from "@/components/ContextPermissionDialog";
+import { ModelSetupPanel } from "@/components/ModelSetupPanel";
 
 const PERSONALITIES = [
   { id: "gentle",    label: "Gentle",    desc: "Warm, patient, softly encouraging" },
@@ -34,6 +35,7 @@ export function SettingsPanel({ open, onClose }: Props) {
   const [memoryPanelOpen, setMemoryPanelOpen] = useState(false);
   const [documentPanelOpen, setDocumentPanelOpen] = useState(false);
   const [ctxPermOpen, setCtxPermOpen] = useState(false);
+  const [setupPanelOpen, setSetupPanelOpen] = useState(false);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setLocalEndpoint(settings.endpoint); }, [settings.endpoint]);
@@ -139,14 +141,29 @@ export function SettingsPanel({ open, onClose }: Props) {
             ))}
           </select>
           <Label>Piper binary path</Label>
-          <Input
+          <PathInput
             value={settings.piper_binary}
             onChange={(v) => update("piper_binary", v)}
-            placeholder="/usr/local/bin/piper"
+            placeholder="Leave empty if piper is on your PATH"
+            filters={["exe"]}
           />
-          <p style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-            Leave empty if piper is on your PATH. Voice cloning (XTTS-v2) arrives in M6.
-          </p>
+          <button
+            type="button"
+            onClick={() => setSetupPanelOpen(true)}
+            style={{
+              background: "transparent",
+              border: "1px solid var(--text-dim)",
+              borderRadius: "6px",
+              color: "var(--text-muted)",
+              fontSize: "12px",
+              padding: "5px 10px",
+              cursor: "pointer",
+              alignSelf: "flex-start",
+              marginTop: "2px",
+            }}
+          >
+            Auto-download tools…
+          </button>
         </Section>
 
         {/* Voice Tone */}
@@ -202,20 +219,19 @@ export function SettingsPanel({ open, onClose }: Props) {
             ))}
           </select>
           <Label>whisper.cpp binary path</Label>
-          <Input
+          <PathInput
             value={settings.whisper_binary}
             onChange={(v) => update("whisper_binary", v)}
             placeholder="C:\tools\whisper\main.exe"
+            filters={["exe"]}
           />
           <Label>Whisper model file (.bin)</Label>
-          <Input
+          <PathInput
             value={settings.whisper_model}
             onChange={(v) => update("whisper_model", v)}
             placeholder="C:\tools\whisper\models\ggml-base.en.bin"
+            filters={["bin"]}
           />
-          <p style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-            Download whisper.cpp + ggml-base.en.bin (~141 MB) from github.com/ggerganov/whisper.cpp/releases
-          </p>
           <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "13px", cursor: "pointer" }}>
             <input
               type="checkbox"
@@ -345,6 +361,7 @@ export function SettingsPanel({ open, onClose }: Props) {
     </div>
     <MemoryPanel open={memoryPanelOpen} onClose={() => setMemoryPanelOpen(false)} />
     <DocumentPanel open={documentPanelOpen} onClose={() => setDocumentPanelOpen(false)} />
+    {setupPanelOpen && <ModelSetupPanel onDone={() => setSetupPanelOpen(false)} />}
     {ctxPermOpen && (
       <ContextPermissionDialog
         onAllow={async () => {
@@ -385,6 +402,44 @@ function Input({ value, onChange, placeholder }: { value: string; onChange: (v: 
       placeholder={placeholder}
       style={inputStyle}
     />
+  );
+}
+
+function PathInput({ value, onChange, placeholder, filters }: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  filters: string[];
+}) {
+  const browse = async () => {
+    const path = await pickFile(filters);
+    if (path) onChange(path);
+  };
+  return (
+    <div style={{ display: "flex", gap: "6px" }}>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        style={{ ...inputStyle, flex: 1 }}
+      />
+      <button
+        type="button"
+        onClick={browse}
+        style={{
+          background: "var(--bg-elevated)",
+          border: "1px solid var(--text-dim)",
+          borderRadius: "6px",
+          color: "var(--text-muted)",
+          fontSize: "12px",
+          padding: "0 10px",
+          cursor: "pointer",
+          whiteSpace: "nowrap",
+        }}
+      >
+        Browse
+      </button>
+    </div>
   );
 }
 
