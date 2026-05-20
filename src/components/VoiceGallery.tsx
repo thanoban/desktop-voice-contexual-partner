@@ -15,10 +15,12 @@ interface Props {
 }
 
 export const VOICE_CATALOG = [
-  { id: "en_US-amy-medium",    toolId: "piper_voice_amy",    label: "Amy",    gender: "F" as const, accent: "US Female", desc: "Warm & friendly"   },
-  { id: "en_US-lessac-medium", toolId: "piper_voice_lessac", label: "Lessac", gender: "F" as const, accent: "US Female", desc: "Clear & natural"   },
-  { id: "en_US-ryan-medium",   toolId: "piper_voice_ryan",   label: "Ryan",   gender: "M" as const, accent: "US Male",   desc: "Friendly & smooth" },
-  { id: "en_GB-alan-medium",   toolId: "piper_voice_alan",   label: "Alan",   gender: "M" as const, accent: "UK Male",   desc: "Calm & articulate" },
+  { id: "en_US-amy-medium",        toolId: "piper_voice_amy",        label: "Amy",        gender: "F" as const, accent: "US Female",    desc: "Warm & friendly",   lang: "EN" },
+  { id: "en_US-lessac-medium",     toolId: "piper_voice_lessac",     label: "Lessac",     gender: "F" as const, accent: "US Female",    desc: "Clear & natural",   lang: "EN" },
+  { id: "en_US-ryan-medium",       toolId: "piper_voice_ryan",       label: "Ryan",       gender: "M" as const, accent: "US Male",      desc: "Friendly & smooth", lang: "EN" },
+  { id: "en_GB-alan-medium",       toolId: "piper_voice_alan",       label: "Alan",       gender: "M" as const, accent: "UK Male",      desc: "Calm & articulate", lang: "EN" },
+  { id: "hi_IN-priyamvada-medium", toolId: "piper_voice_priyamvada", label: "Priyamvada", gender: "F" as const, accent: "India · Hindi", desc: "Natural & expressive", lang: "HI" },
+  { id: "hi_IN-pratham-medium",    toolId: "piper_voice_pratham",    label: "Pratham",    gender: "M" as const, accent: "India · Hindi", desc: "Clear & warm",      lang: "HI" },
 ];
 
 interface VoiceState {
@@ -118,8 +120,18 @@ export function VoiceGallery({ onDone }: Props) {
           </p>
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-          {VOICE_CATALOG.map((v) => {
+        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+          {(["EN", "HI"] as const).map((lang) => (
+            <div key={lang} style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                {lang === "EN" ? "English Voices" : "Hindi Voices"}
+              </div>
+              {lang === "HI" && (
+                <p style={{ fontSize: "11px", color: "var(--text-muted)", lineHeight: 1.5, margin: 0 }}>
+                  These voices speak Hindi. Use them when chatting in Hindi.
+                </p>
+              )}
+              {VOICE_CATALOG.filter((v) => v.lang === lang).map((v) => {
             const vs = voiceState[v.toolId];
             const downloaded = !!status?.voice_paths[v.id];
             const isActive = settings.piper_voice?.includes(v.id) ?? false;
@@ -237,6 +249,8 @@ export function VoiceGallery({ onDone }: Props) {
               </div>
             );
           })}
+            </div>
+          ))}
         </div>
 
         <button type="button" onClick={onDone} style={doneBtn}>

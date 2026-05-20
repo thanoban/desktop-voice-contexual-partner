@@ -28,6 +28,14 @@ const PIPER_VOICE_ALAN_ONNX: &str =
     "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_GB/alan/medium/en_GB-alan-medium.onnx";
 const PIPER_VOICE_ALAN_JSON: &str =
     "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_GB/alan/medium/en_GB-alan-medium.onnx.json";
+const PIPER_VOICE_PRIYAMVADA_ONNX: &str =
+    "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/hi/hi_IN/priyamvada/medium/hi_IN-priyamvada-medium.onnx";
+const PIPER_VOICE_PRIYAMVADA_JSON: &str =
+    "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/hi/hi_IN/priyamvada/medium/hi_IN-priyamvada-medium.onnx.json";
+const PIPER_VOICE_PRATHAM_ONNX: &str =
+    "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/hi/hi_IN/pratham/medium/hi_IN-pratham-medium.onnx";
+const PIPER_VOICE_PRATHAM_JSON: &str =
+    "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/hi/hi_IN/pratham/medium/hi_IN-pratham-medium.onnx.json";
 
 const WHISPER_MODEL_URL: &str =
     "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin";
@@ -38,6 +46,8 @@ const KNOWN_VOICE_IDS: &[&str] = &[
     "en_US-lessac-medium",
     "en_US-ryan-medium",
     "en_GB-alan-medium",
+    "hi_IN-priyamvada-medium",
+    "hi_IN-pratham-medium",
 ];
 
 // ── Event payloads ────────────────────────────────────────────────────────────
@@ -170,8 +180,10 @@ pub async fn download_tool(
         "piper_voice_amy"       => dl_piper_voice_amy(&app, &state).await,
         "piper_voice_lessac"    => dl_piper_voice_file(&app, "piper_voice_lessac", "en_US-lessac-medium", PIPER_VOICE_LESSAC_ONNX, PIPER_VOICE_LESSAC_JSON).await,
         "piper_voice_ryan"      => dl_piper_voice_file(&app, "piper_voice_ryan",   "en_US-ryan-medium",   PIPER_VOICE_RYAN_ONNX,   PIPER_VOICE_RYAN_JSON).await,
-        "piper_voice_alan"      => dl_piper_voice_file(&app, "piper_voice_alan",   "en_GB-alan-medium",   PIPER_VOICE_ALAN_ONNX,   PIPER_VOICE_ALAN_JSON).await,
-        "whisper_model_base_en" => dl_whisper_model(&app, &state).await,
+        "piper_voice_alan"        => dl_piper_voice_file(&app, "piper_voice_alan",        "en_GB-alan-medium",      PIPER_VOICE_ALAN_ONNX,        PIPER_VOICE_ALAN_JSON).await,
+        "piper_voice_priyamvada"  => dl_piper_voice_file(&app, "piper_voice_priyamvada",  "hi_IN-priyamvada-medium", PIPER_VOICE_PRIYAMVADA_ONNX,  PIPER_VOICE_PRIYAMVADA_JSON).await,
+        "piper_voice_pratham"     => dl_piper_voice_file(&app, "piper_voice_pratham",     "hi_IN-pratham-medium",    PIPER_VOICE_PRATHAM_ONNX,     PIPER_VOICE_PRATHAM_JSON).await,
+        "whisper_model_base_en"   => dl_whisper_model(&app, &state).await,
         other => Err(format!("Unknown tool: {other}")),
     };
     if let Err(ref e) = result {
