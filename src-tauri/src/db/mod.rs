@@ -95,6 +95,59 @@ pub fn get_recent_turns(conn: &Connection, session_id: &str, limit: usize) -> Ve
     rows.into_iter().rev().collect()
 }
 
+pub struct SessionSummary {
+    pub id: String,
+    pub started_at: i64,
+    pub ended_at: Option<i64>,
+    pub turn_count: i64,
+    pub first_user_message: Option<String>,
+}
+
+pub fn list_sessions(conn: &Connection) -> Vec<SessionSummary> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT s.id, s.started_at, s.ended_at, COUNT(t.id) as turn_count, \
+             MIN(CASE WHEN t.role='user' THEN t.content END) as first_msg \
+             FROM sessions s \
+             LEFT JOIN turns t ON t.session_id = s.id \
+             GROUP BY s.id \
+             ORDER BY s.started_at DESC \
+             LIMIT 100",
+        )
+        .unwrap();
+    stmt.query_map([], |row| {
+        Ok(SessionSummary {
+            id: row.get(0)?,
+            started_at: row.get(1)?,
+            ended_at: row.get(2)?,
+            turn_count: row.get(3)?,
+            first_user_message: row.get(4)?,
+        })
+    })
+    .unwrap()
+    .filter_map(|r| r.ok())
+    .collect()
+}
+
+pub fn get_all_turns(conn: &Connection, session_id: &str) -> Vec<(String, String, i64)> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT role, content, created_at FROM turns \
+             WHERE session_id = ?1 ORDER BY created_at ASC",
+        )
+        .unwrap();
+    stmt.query_map(rusqlite::params![session_id], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, i64>(2)?,
+        ))
+    })
+    .unwrap()
+    .filter_map(|r| r.ok())
+    .collect()
+}
+
 fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

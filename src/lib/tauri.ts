@@ -273,6 +273,28 @@ export const expandToMain = (): Promise<void> =>
 export const exportConversation = (content: string, filename: string): Promise<void> =>
   invoke("export_conversation", { content, filename });
 
+// ── History commands ──────────────────────────────────────────────────────────
+
+export interface SessionInfo {
+  id: string;
+  started_at: number;
+  ended_at: number | null;
+  turn_count: number;
+  preview: string;
+}
+
+export interface TurnInfo {
+  role: "user" | "assistant";
+  content: string;
+  created_at: number;
+}
+
+export const listSessions = (): Promise<SessionInfo[]> =>
+  invoke("list_sessions");
+
+export const getSessionTurns = (sessionId: string): Promise<TurnInfo[]> =>
+  invoke("get_session_turns", { sessionId });
+
 // ── Global PTT shortcut events (M5) ─────────────────────────────────────────
 
 export const onPttToggle = (cb: () => void): Promise<UnlistenFn> =>

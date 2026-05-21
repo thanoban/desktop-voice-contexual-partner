@@ -8,6 +8,7 @@ import { SettingsPanel } from "@/components/SettingsPanel";
 import { SafetyPanel } from "@/components/SafetyPanel";
 import { ModelSetupPanel } from "@/components/ModelSetupPanel";
 import { AboutDialog } from "@/components/AboutDialog";
+import { HistoryPanel } from "@/components/HistoryPanel";
 import { Onboarding } from "@/components/Onboarding";
 import { useChatStore } from "@/store/chatStore";
 import { useSettingsStore } from "@/store/settingsStore";
@@ -31,6 +32,7 @@ export default function App() {
   const [safetyVisible, setSafetyVisible] = useState(false);
   const [showVoiceSetup, setShowVoiceSetup] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [ctx, setCtx] = useState<ContextStatus>({ sharing: false });
 
   const { settings, load: loadSettings, loaded } = useSettingsStore();
@@ -78,6 +80,7 @@ export default function App() {
         setSettingsOpen(false);
         setAboutOpen(false);
         setShowVoiceSetup(false);
+        setHistoryOpen(false);
       }
     };
     window.addEventListener("keydown", handler);
@@ -137,6 +140,15 @@ export default function App() {
             title={ctx.sharing ? `Sharing: ${ctx.window_title ?? "active window"}` : "Share what you're working on"}
           >
             ◉
+          </button>
+          <button
+            type="button"
+            onClick={() => setHistoryOpen(true)}
+            style={titleBtnStyle}
+            aria-label="Conversation history"
+            title="Conversation history"
+          >
+            ☰
           </button>
           <button
             type="button"
@@ -207,6 +219,7 @@ export default function App() {
       <StatusBar />
 
       {/* Overlays */}
+      <HistoryPanel open={historyOpen} onClose={() => setHistoryOpen(false)} />
       <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <SafetyPanel visible={safetyVisible} onDismiss={() => setSafetyVisible(false)} />
       {showVoiceSetup && (
