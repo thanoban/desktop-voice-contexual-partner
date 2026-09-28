@@ -14,6 +14,7 @@ export interface Settings {
   model: string;
   companion_name: string;
   personality: "gentle" | "playful" | "calm" | "energetic" | "mentor" | "caring";
+  partner_mode: "company" | "work" | "focus";
   piper_binary: string;
   piper_voice: string;
   onboarding_done: string;

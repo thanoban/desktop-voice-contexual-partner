@@ -13,6 +13,7 @@ const defaults: Settings = {
   model: "llama3.2:8b",
   companion_name: "Amy",
   personality: "gentle",
+  partner_mode: "company",
   piper_binary: "",
   piper_voice: "en_US-amy-medium",
   onboarding_done: "false",

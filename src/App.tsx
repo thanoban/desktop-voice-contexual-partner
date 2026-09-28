@@ -4,6 +4,7 @@ import { Transcript } from "@/components/Transcript";
 import { VoiceButton } from "@/components/VoiceButton";
 import { VoiceVisualizer } from "@/components/VoiceVisualizer";
 import { Composer } from "@/components/Composer";
+import { PartnerModeSwitch } from "@/components/PartnerModeSwitch";
 import { StatusBar } from "@/components/StatusBar";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { SafetyPanel } from "@/components/SafetyPanel";
@@ -195,6 +196,8 @@ export default function App() {
           </button>
         </div>
       </div>
+
+      <PartnerModeSwitch />
 
       {/* Transcript */}
       <Transcript />

@@ -12,6 +12,7 @@ pub struct Settings {
     // Companion
     pub companion_name: String,
     pub personality: String,
+    pub partner_mode: String,
     pub onboarding_done: String,
     // TTS
     pub piper_binary: String,
@@ -45,6 +46,7 @@ impl Default for Settings {
             model: "llama3.2:8b".into(),
             companion_name: "Amy".into(),
             personality: "gentle".into(),
+            partner_mode: "company".into(),
             onboarding_done: "false".into(),
             piper_binary: String::new(),
             piper_voice: "en_US-amy-medium".into(),
@@ -79,6 +81,7 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<Settings, String> {
             .cloned()
             .unwrap_or(d.companion_name),
         personality: pairs.get("personality").cloned().unwrap_or(d.personality),
+        partner_mode: pairs.get("partner_mode").cloned().unwrap_or(d.partner_mode),
         onboarding_done: pairs
             .get("onboarding_done")
             .cloned()

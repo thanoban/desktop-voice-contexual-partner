@@ -21,7 +21,7 @@ fn format_age(created_at_ms: i64) -> String {
     }
 }
 
-fn personality_prompt(preset: &str, name: &str) -> String {
+fn personality_prompt(preset: &str, name: &str, partner_mode: &str) -> String {
     let tone = match preset {
         "gentle" => {
             "You are warm, patient, and gently encouraging. You notice how the user is \
@@ -52,9 +52,21 @@ fn personality_prompt(preset: &str, name: &str) -> String {
         _ => "You are a warm and thoughtful companion.",
     };
 
+    let mode = match partner_mode {
+        "work" => {
+            "The user is in Help me work mode. Be practical and concise. Ask only for missing details that block useful progress, and keep spoken answers short when detailed material can be shown visually."
+        }
+        "focus" => {
+            "The user is in Quiet focus mode. Be calm, minimal, and non-disruptive. Avoid extra questions, celebration, or conversational detours unless the user asks for them."
+        }
+        _ => {
+            "The user is in Keep me company mode. Prioritize warm natural conversation, thoughtful listening, gentle humour when appropriate, and a sense of shared presence without dependency or pressure."
+        }
+    };
+
     format!(
         "You are {name}, a local AI companion running entirely on this user's machine. \
-         {tone} \
+         {tone} {mode} \
          Keep responses conversational and concise — like a friend, not a lecture. \
          Do not use bullet points unless specifically asked. \
          Do not start responses with 'Certainly!' or 'Of course!'. \
@@ -83,6 +95,7 @@ pub async fn send_message(
         model,
         endpoint,
         personality,
+        partner_mode,
         name,
         piper_binary,
         piper_voice,
@@ -101,6 +114,7 @@ pub async fn send_message(
         let endpoint =
             db::get_setting(&conn, "endpoint").unwrap_or_else(|| "http://localhost:11434".into());
         let persona = db::get_setting(&conn, "personality").unwrap_or_else(|| "gentle".into());
+        let mode = db::get_setting(&conn, "partner_mode").unwrap_or_else(|| "company".into());
         let name = db::get_setting(&conn, "companion_name").unwrap_or_else(|| "Amy".into());
         let piper = db::get_setting(&conn, "piper_binary").unwrap_or_default();
         let voice =
@@ -115,8 +129,8 @@ pub async fn send_message(
         let kok_model = db::get_setting(&conn, "kokoro_model").unwrap_or_default();
         let kok_voices = db::get_setting(&conn, "kokoro_voices").unwrap_or_default();
         (
-            sid, model, endpoint, persona, name, piper, voice, speed, expr, ctx_auto, emb_mdl,
-            custom_sys, kok_model, kok_voices,
+            sid, model, endpoint, persona, mode, name, piper, voice, speed, expr, ctx_auto,
+            emb_mdl, custom_sys, kok_model, kok_voices,
         )
     }; // MutexGuard dropped here
 
@@ -196,7 +210,7 @@ pub async fn send_message(
 
     // Custom system prompt overrides personality presets when non-empty
     let mut system_prompt = if custom_system_prompt.trim().is_empty() {
-        personality_prompt(&personality, &name)
+        personality_prompt(&personality, &name, &partner_mode)
     } else {
         custom_system_prompt.trim().to_string()
     };
@@ -347,6 +361,7 @@ pub async fn get_greeting(state: State<'_, AppState>, app: AppHandle) -> Result<
         model,
         endpoint,
         personality,
+        partner_mode,
         name,
         piper_binary,
         piper_voice,
@@ -361,6 +376,7 @@ pub async fn get_greeting(state: State<'_, AppState>, app: AppHandle) -> Result<
         let endpoint =
             db::get_setting(&conn, "endpoint").unwrap_or_else(|| "http://localhost:11434".into());
         let persona = db::get_setting(&conn, "personality").unwrap_or_else(|| "gentle".into());
+        let mode = db::get_setting(&conn, "partner_mode").unwrap_or_else(|| "company".into());
         let name = db::get_setting(&conn, "companion_name").unwrap_or_else(|| "Amy".into());
         let piper = db::get_setting(&conn, "piper_binary").unwrap_or_default();
         let voice =
@@ -370,7 +386,7 @@ pub async fn get_greeting(state: State<'_, AppState>, app: AppHandle) -> Result<
         let kok_m = db::get_setting(&conn, "kokoro_model").unwrap_or_default();
         let kok_v = db::get_setting(&conn, "kokoro_voices").unwrap_or_default();
         (
-            sid, model, endpoint, persona, name, piper, voice, speed, expr, kok_m, kok_v,
+            sid, model, endpoint, persona, mode, name, piper, voice, speed, expr, kok_m, kok_v,
         )
     };
 
@@ -389,7 +405,7 @@ pub async fn get_greeting(state: State<'_, AppState>, app: AppHandle) -> Result<
     let messages = vec![
         ChatMessage {
             role: "system".into(),
-            content: personality_prompt(&personality, &name),
+            content: personality_prompt(&personality, &name, &partner_mode),
         },
         ChatMessage {
             role: "user".into(),
@@ -502,4 +518,22 @@ pub async fn speak_text(
     )
     .await
     .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::personality_prompt;
+
+    #[test]
+    fn partner_modes_change_conversation_policy() {
+        let company = personality_prompt("gentle", "Amy", "company");
+        let work = personality_prompt("gentle", "Amy", "work");
+        let focus = personality_prompt("gentle", "Amy", "focus");
+
+        assert!(company.contains("Keep me company mode"));
+        assert!(work.contains("Help me work mode"));
+        assert!(focus.contains("Quiet focus mode"));
+        assert_ne!(company, work);
+        assert_ne!(work, focus);
+    }
 }
