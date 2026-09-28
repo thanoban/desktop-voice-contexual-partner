@@ -18,6 +18,7 @@ import {
   onChatToken,
   onChatDone,
   onChatError,
+  onChatCancelled,
   onSpeakStart,
   onSpeakEnd,
   onSafetyShow,
@@ -58,6 +59,10 @@ export default function App() {
       }),
       onChatError((msg) => {
         addMessage({ role: "assistant", content: `[Error: ${msg}]` });
+        setProcessing(false);
+      }),
+      onChatCancelled(() => {
+        finalizeStream();
         setProcessing(false);
       }),
       onSpeakStart(() => setSpeaking(true)),

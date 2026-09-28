@@ -1,5 +1,5 @@
 import { useCallback, useState, type FormEvent, type KeyboardEvent } from "react";
-import { sendMessage } from "@/lib/tauri";
+import { sendMessage, stopSpeaking } from "@/lib/tauri";
 import { useChatStore } from "@/store/chatStore";
 
 interface Props {
@@ -39,6 +39,10 @@ export function Composer({ disabled = false }: Props) {
     }
   };
 
+  const cancel = () => {
+    void stopSpeaking();
+  };
+
   return (
     <form
       onSubmit={handleSubmit}
@@ -76,9 +80,10 @@ export function Composer({ disabled = false }: Props) {
         }}
       />
       <button
-        type="submit"
-        disabled={disabled || isProcessing || !draft.trim()}
-        aria-label="Send message"
+        type={isProcessing ? "button" : "submit"}
+        onClick={isProcessing ? cancel : undefined}
+        disabled={disabled || (!isProcessing && !draft.trim())}
+        aria-label={isProcessing ? "Stop generating" : "Send message"}
         style={{
           height: "38px",
           minWidth: "58px",
@@ -87,11 +92,11 @@ export function Composer({ disabled = false }: Props) {
           background: "var(--accent)",
           color: "white",
           fontWeight: 600,
-          cursor: disabled || isProcessing || !draft.trim() ? "not-allowed" : "pointer",
-          opacity: disabled || isProcessing || !draft.trim() ? 0.45 : 1,
+          cursor: disabled || (!isProcessing && !draft.trim()) ? "not-allowed" : "pointer",
+          opacity: disabled || (!isProcessing && !draft.trim()) ? 0.45 : 1,
         }}
       >
-        {isProcessing ? "Wait" : "Send"}
+        {isProcessing ? "Stop" : "Send"}
       </button>
     </form>
   );

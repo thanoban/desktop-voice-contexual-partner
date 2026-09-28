@@ -28,11 +28,13 @@ export function VoiceButton({ disabled, voiceReady = true, onNeedsSetup }: Props
 
     // Interrupt TTS if speaking
     if (isSpeaking) {
-      await stopSpeaking().catch(() => null);
       return;
     }
 
-    if (isProcessing) return;
+    if (isProcessing) {
+      await stopSpeaking().catch(() => null);
+      return;
+    }
 
     if (!isListening) {
       // ── Start ──
@@ -91,15 +93,15 @@ export function VoiceButton({ disabled, voiceReady = true, onNeedsSetup }: Props
   const labels: Record<typeof state, string> = {
     idle:       disabled ? "Ollama not running" : "Press Space to Speak",
     listening:  "Listening… press Space to send",
-    processing: "Thinking…",
-    speaking:   "Tap to Interrupt",
+    processing: "Thinking… tap to stop",
+    speaking:   "Speaking…",
   };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "10px" }}>
       <button
         onClick={handleToggle}
-        disabled={disabled}
+        disabled={disabled || isSpeaking}
         type="button"
         style={{
           width: "72px",
@@ -107,7 +109,7 @@ export function VoiceButton({ disabled, voiceReady = true, onNeedsSetup }: Props
           borderRadius: "50%",
           background: colors[state],
           border: `2px solid ${state === "idle" ? "var(--text-dim)" : colors[state]}`,
-          cursor: disabled ? "not-allowed" : "pointer",
+          cursor: disabled || isSpeaking ? "not-allowed" : "pointer",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",

@@ -3,6 +3,7 @@ use crate::llm::client::ChatMessage;
 use crate::memory;
 use crate::safety;
 use crate::AppState;
+use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 fn format_age(created_at_ms: i64) -> String {
@@ -70,6 +71,9 @@ pub async fn send_message(
     app: AppHandle,
     content: String,
 ) -> Result<(), String> {
+    let turn = state.conversation.begin()?;
+    let cancellation = turn.cancellation();
+
     // Check distress before anything else
     let distress = safety::check(&content);
 
@@ -218,12 +222,24 @@ pub async fn send_message(
     }
 
     // Stream from Ollama
-    let full_response = crate::llm::client::stream_chat(&app, &endpoint, &model, messages)
-        .await
-        .map_err(|e| {
-            let _ = app.emit("chat:error", e.to_string());
-            e.to_string()
-        })?;
+    let stream_result =
+        crate::llm::client::stream_chat(&app, &endpoint, &model, messages, &cancellation)
+            .await
+            .map_err(|e| {
+                let _ = app.emit("chat:error", e.to_string());
+                e.to_string()
+            })?;
+
+    if stream_result.cancelled {
+        if !stream_result.content.is_empty() {
+            let conn = state.db.lock().map_err(|e| e.to_string())?;
+            db::save_turn(&conn, &session_id, "assistant", &stream_result.content)
+                .map_err(|e| e.to_string())?;
+        }
+        let _ = app.emit("chat:cancelled", turn.id());
+        return Ok(());
+    }
+    let full_response = stream_result.content;
 
     // Append safety suffix if needed
     let final_response = if let Some(suffix) = safety::companion_suffix(distress) {
@@ -323,6 +339,9 @@ pub async fn send_message(
 
 #[tauri::command]
 pub async fn get_greeting(state: State<'_, AppState>, app: AppHandle) -> Result<(), String> {
+    let turn = state.conversation.begin()?;
+    let cancellation = turn.cancellation();
+
     let (
         session_id,
         model,
@@ -378,12 +397,19 @@ pub async fn get_greeting(state: State<'_, AppState>, app: AppHandle) -> Result<
         },
     ];
 
-    let full_response = crate::llm::client::stream_chat(&app, &endpoint, &model, messages)
-        .await
-        .map_err(|e| {
-            let _ = app.emit("chat:error", e.to_string());
-            e.to_string()
-        })?;
+    let stream_result =
+        crate::llm::client::stream_chat(&app, &endpoint, &model, messages, &cancellation)
+            .await
+            .map_err(|e| {
+                let _ = app.emit("chat:error", e.to_string());
+                e.to_string()
+            })?;
+
+    if stream_result.cancelled {
+        let _ = app.emit("chat:cancelled", turn.id());
+        return Ok(());
+    }
+    let full_response = stream_result.content;
 
     {
         let conn = state.db.lock().map_err(|e| e.to_string())?;
@@ -421,11 +447,25 @@ pub fn start_new_session(state: State<'_, AppState>) -> Result<String, String> {
     db::create_session(&conn).map_err(|e| e.to_string())
 }
 
+#[derive(Debug, Serialize)]
+pub struct CancellationResponse {
+    pub generation: crate::conversation::controller::CancelRequestStatus,
+    pub playback: &'static str,
+}
+
 #[tauri::command]
-pub async fn stop_speaking() -> Result<(), String> {
-    // In M0 the subprocess-based TTS doesn't support mid-stream interrupt.
-    // CPAL-based interrupt arrives in M1.
-    Ok(())
+pub fn stop_speaking(state: State<'_, AppState>) -> CancellationResponse {
+    CancellationResponse {
+        generation: state.conversation.cancel_active(),
+        playback: "unsupported",
+    }
+}
+
+#[tauri::command]
+pub fn get_conversation_snapshot(
+    state: State<'_, AppState>,
+) -> crate::conversation::controller::ConversationSnapshot {
+    state.conversation.snapshot()
 }
 
 #[tauri::command]

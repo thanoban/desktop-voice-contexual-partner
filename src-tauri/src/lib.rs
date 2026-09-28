@@ -14,6 +14,7 @@
 mod audio;
 mod commands;
 mod context;
+mod conversation;
 mod db;
 pub mod domain;
 mod embed;
@@ -39,6 +40,7 @@ pub struct AppState {
     pub db: Mutex<rusqlite::Connection>,
     pub recording: Mutex<Option<ActiveRecording>>,
     pub context: Mutex<SharedContext>,
+    pub conversation: Arc<conversation::controller::ConversationController>,
 }
 
 pub struct ActiveRecording {
@@ -125,6 +127,7 @@ pub fn run() {
                 db: Mutex::new(conn),
                 recording: Mutex::new(None),
                 context: Mutex::new(SharedContext::default()),
+                conversation: Arc::new(conversation::controller::ConversationController::default()),
             });
 
             // ── Widget window ─────────────────────────────────────────────────
@@ -209,6 +212,7 @@ pub fn run() {
             commands::chat::get_greeting,
             commands::chat::start_new_session,
             commands::chat::stop_speaking,
+            commands::chat::get_conversation_snapshot,
             commands::chat::speak_text,
             // Voice (M1)
             commands::voice::start_listening,

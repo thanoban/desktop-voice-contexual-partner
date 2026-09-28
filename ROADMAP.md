@@ -18,6 +18,9 @@ The plan was published at `bc734ce` on `main`, with earlier local documents pres
 | Recording completion and input formats | unit-tested | Explicit worker completion replaces fixed delay; f32/i16/u16 capture and bounded buffers compile; resampling tests pass |
 | Ollama stream framing | unit-tested | Split JSON, split UTF-8, multi-frame chunks, malformed frames and final frames are covered |
 | Typed text fallback | implemented | Keyboard-accessible composer supports Enter to send and Shift+Enter for multiline drafts |
+| Foreground turn ownership | unit-tested | One backend controller owns the active turn across windows and rejects overlapping generation |
+| Generation cancellation | unit-tested | Text and voice controls signal the active request; HTTP request/stream cancellation finalizes retained partial output |
+| Playback cancellation | planned | UI no longer claims subprocess playback stopped; native playback ownership remains required |
 | Live voice, provider, integration and installed-device behavior | planned | Requires the later stage gates below |
 
 ## Stage gates

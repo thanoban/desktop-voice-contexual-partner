@@ -12,6 +12,7 @@ import {
   onChatToken,
   onChatDone,
   onChatError,
+  onChatCancelled,
   onSpeakStart,
   onSpeakEnd,
 } from "@/lib/tauri";
@@ -43,6 +44,7 @@ export function Widget() {
       onChatToken((t) => appendToken(t)),
       onChatDone(() => { finalizeStream(); setProcessing(false); }),
       onChatError(() => setProcessing(false)),
+      onChatCancelled(() => { finalizeStream(); setProcessing(false); }),
       onSpeakStart(() => setSpeaking(true)),
       onSpeakEnd(() => setSpeaking(false)),
     ]).then((fns) => uns.push(...fns));

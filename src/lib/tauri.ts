@@ -72,8 +72,21 @@ export const speakText = (text: string, voice: string): Promise<void> =>
 export const getSapiVoices = (): Promise<string[]> =>
   invoke("get_sapi_voices");
 
-export const stopSpeaking = (): Promise<void> =>
+export interface CancellationResponse {
+  generation: "requested" | "no_active_turn";
+  playback: "unsupported";
+}
+
+export interface ConversationSnapshot {
+  active_turn_id?: string | null;
+  cancellation_requested: boolean;
+}
+
+export const stopSpeaking = (): Promise<CancellationResponse> =>
   invoke("stop_speaking");
+
+export const getConversationSnapshot = (): Promise<ConversationSnapshot> =>
+  invoke("get_conversation_snapshot");
 
 // ── Voice input commands (M1) ─────────────────────────────────────────────────
 
@@ -122,6 +135,9 @@ export const onChatDone = (cb: () => void): Promise<UnlistenFn> =>
 
 export const onChatError = (cb: (msg: string) => void): Promise<UnlistenFn> =>
   listen<string>("chat:error", (e) => cb(e.payload));
+
+export const onChatCancelled = (cb: (turnId: string) => void): Promise<UnlistenFn> =>
+  listen<string>("chat:cancelled", (e) => cb(e.payload));
 
 export const onSpeakStart = (cb: () => void): Promise<UnlistenFn> =>
   listen("tts:start", () => cb());

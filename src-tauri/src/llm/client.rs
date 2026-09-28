@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 use tauri::Emitter;
 
+use crate::conversation::controller::CancellationToken;
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ChatMessage {
     pub role: String,
@@ -54,7 +56,8 @@ pub async fn stream_chat(
     endpoint: &str,
     model: &str,
     messages: Vec<ChatMessage>,
-) -> Result<String> {
+    cancellation: &CancellationToken,
+) -> Result<StreamChatResult> {
     let client = build_client()?;
     let url = format!("{}/api/chat", endpoint.trim_end_matches('/'));
 
@@ -68,13 +71,17 @@ pub async fn stream_chat(
         }
     });
 
-    let response = client
+    let request = client
         .post(&url)
         .json(&body)
         .timeout(std::time::Duration::from_secs(120))
-        .send()
-        .await
-        .map_err(|e| anyhow!("Ollama request failed: {}", e))?;
+        .send();
+    let response = tokio::select! {
+        _ = cancellation.cancelled() => {
+            return Ok(StreamChatResult { content: String::new(), cancelled: true });
+        }
+        response = request => response.map_err(|e| anyhow!("Ollama request failed: {}", e))?,
+    };
 
     if !response.status().is_success() {
         let status = response.status();
@@ -87,7 +94,14 @@ pub async fn stream_chat(
     let mut decoder = NdjsonDecoder::default();
     let mut terminal = false;
 
-    while let Some(chunk) = stream.next().await {
+    loop {
+        let next = tokio::select! {
+            _ = cancellation.cancelled() => {
+                return Ok(StreamChatResult { content: full_content, cancelled: true });
+            }
+            next = stream.next() => next,
+        };
+        let Some(chunk) = next else { break };
         let bytes = chunk.map_err(|e| anyhow!("Stream error: {}", e))?;
         for chunk in decoder.push(&bytes)? {
             terminal = consume_chunk(app, chunk, &mut full_content)?;
@@ -110,7 +124,15 @@ pub async fn stream_chat(
         return Err(anyhow!("Ollama stream ended without a terminal frame"));
     }
 
-    Ok(full_content)
+    Ok(StreamChatResult {
+        content: full_content,
+        cancelled: false,
+    })
+}
+
+pub struct StreamChatResult {
+    pub content: String,
+    pub cancelled: bool,
 }
 
 fn consume_chunk(
