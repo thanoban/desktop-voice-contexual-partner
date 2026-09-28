@@ -1,0 +1,98 @@
+import { useCallback, useState, type FormEvent, type KeyboardEvent } from "react";
+import { sendMessage } from "@/lib/tauri";
+import { useChatStore } from "@/store/chatStore";
+
+interface Props {
+  disabled?: boolean;
+}
+
+export function Composer({ disabled = false }: Props) {
+  const [draft, setDraft] = useState("");
+  const isProcessing = useChatStore((state) => state.isProcessing);
+  const addMessage = useChatStore((state) => state.addMessage);
+  const setProcessing = useChatStore((state) => state.setProcessing);
+
+  const submit = useCallback(async () => {
+    const content = draft.trim();
+    if (!content || disabled || isProcessing) return;
+
+    setDraft("");
+    addMessage({ role: "user", content });
+    setProcessing(true);
+    try {
+      await sendMessage(content);
+    } catch (error) {
+      addMessage({ role: "assistant", content: `[Error: ${String(error)}]` });
+      setProcessing(false);
+    }
+  }, [addMessage, disabled, draft, isProcessing, setProcessing]);
+
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    void submit();
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+      event.preventDefault();
+      void submit();
+    }
+  };
+
+  return (
+    <form
+      onSubmit={handleSubmit}
+      style={{
+        display: "flex",
+        gap: "8px",
+        padding: "10px 14px",
+        borderTop: "1px solid var(--text-dim)",
+        background: "var(--bg-surface)",
+        alignItems: "flex-end",
+      }}
+    >
+      <textarea
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={handleKeyDown}
+        disabled={disabled}
+        rows={1}
+        maxLength={12_000}
+        aria-label="Message VoicePartner"
+        placeholder={disabled ? "Start a text provider to chat" : "Type a message…"}
+        style={{
+          flex: 1,
+          minHeight: "38px",
+          maxHeight: "112px",
+          resize: "vertical",
+          borderRadius: "10px",
+          border: "1px solid var(--text-dim)",
+          background: "var(--bg-elevated)",
+          color: "var(--text-primary)",
+          padding: "9px 11px",
+          font: "inherit",
+          lineHeight: 1.35,
+          outline: "none",
+        }}
+      />
+      <button
+        type="submit"
+        disabled={disabled || isProcessing || !draft.trim()}
+        aria-label="Send message"
+        style={{
+          height: "38px",
+          minWidth: "58px",
+          borderRadius: "10px",
+          border: "none",
+          background: "var(--accent)",
+          color: "white",
+          fontWeight: 600,
+          cursor: disabled || isProcessing || !draft.trim() ? "not-allowed" : "pointer",
+          opacity: disabled || isProcessing || !draft.trim() ? 0.45 : 1,
+        }}
+      >
+        {isProcessing ? "Wait" : "Send"}
+      </button>
+    </form>
+  );
+}

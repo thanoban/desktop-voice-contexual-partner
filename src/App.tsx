@@ -3,6 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Transcript } from "@/components/Transcript";
 import { VoiceButton } from "@/components/VoiceButton";
 import { VoiceVisualizer } from "@/components/VoiceVisualizer";
+import { Composer } from "@/components/Composer";
 import { StatusBar } from "@/components/StatusBar";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { SafetyPanel } from "@/components/SafetyPanel";
@@ -197,6 +198,8 @@ export default function App() {
       <div style={{ padding: "8px 16px 4px" }}>
         <VoiceVisualizer />
       </div>
+
+      <Composer disabled={ollamaStatus !== "connected"} />
 
       {/* Voice button */}
       <div
