@@ -14,7 +14,9 @@ The plan was published at `bc734ce` on `main`, with earlier local documents pres
 | Contract foundations | unit-tested | Rust domain types, TypeScript mirrors, JSON schemas and fixtures |
 | Session creation semantics | unit-tested | A new session transaction closes prior open sessions; legacy reuse remains tested |
 | Verification pipeline | implemented | `scripts/verify.ps1` and `.github/workflows/verify.yml` |
-| Baseline automated suite | unit-tested | 9 passed, 0 failed on 2026-09-28 |
+| Baseline automated suite | unit-tested | 15 passed, 0 failed on 2026-09-28 |
+| Recording completion and input formats | unit-tested | Explicit worker completion replaces fixed delay; f32/i16/u16 capture and bounded buffers compile; resampling tests pass |
+| Ollama stream framing | unit-tested | Split JSON, split UTF-8, multi-frame chunks, malformed frames and final frames are covered |
 | Live voice, provider, integration and installed-device behavior | planned | Requires the later stage gates below |
 
 ## Stage gates

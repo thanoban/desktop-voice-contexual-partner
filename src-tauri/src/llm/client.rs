@@ -13,7 +13,9 @@ pub struct ChatMessage {
 #[derive(Debug, Deserialize)]
 struct OllamaChatChunk {
     message: Option<OllamaChunkMessage>,
+    #[serde(default)]
     done: bool,
+    error: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -82,37 +84,147 @@ pub async fn stream_chat(
 
     let mut full_content = String::new();
     let mut stream = response.bytes_stream();
+    let mut decoder = NdjsonDecoder::default();
+    let mut terminal = false;
 
     while let Some(chunk) = stream.next().await {
         let bytes = chunk.map_err(|e| anyhow!("Stream error: {}", e))?;
-        let text = String::from_utf8_lossy(&bytes);
-
-        for line in text.lines() {
-            if line.is_empty() {
-                continue;
+        for chunk in decoder.push(&bytes)? {
+            terminal = consume_chunk(app, chunk, &mut full_content)?;
+            if terminal {
+                break;
             }
-            match serde_json::from_str::<OllamaChatChunk>(line) {
-                Ok(chunk) => {
-                    if let Some(msg) = &chunk.message {
-                        if !msg.content.is_empty() {
-                            full_content.push_str(&msg.content);
-                            let _ = app.emit("chat:token", &msg.content);
-                        }
-                    }
-                    if chunk.done {
-                        break;
-                    }
-                }
-                Err(_) => continue,
-            }
+        }
+        if terminal {
+            break;
         }
     }
 
+    if !terminal {
+        for chunk in decoder.finish()? {
+            terminal = consume_chunk(app, chunk, &mut full_content)?;
+        }
+    }
+
+    if !terminal {
+        return Err(anyhow!("Ollama stream ended without a terminal frame"));
+    }
+
     Ok(full_content)
+}
+
+fn consume_chunk(
+    app: &AppHandle,
+    chunk: OllamaChatChunk,
+    full_content: &mut String,
+) -> Result<bool> {
+    if let Some(error) = chunk.error {
+        return Err(anyhow!("Ollama stream error: {}", error));
+    }
+    if let Some(message) = chunk.message {
+        if !message.content.is_empty() {
+            full_content.push_str(&message.content);
+            let _ = app.emit("chat:token", &message.content);
+        }
+    }
+    Ok(chunk.done)
+}
+
+const MAX_NDJSON_FRAME_BYTES: usize = 1024 * 1024;
+
+#[derive(Default)]
+struct NdjsonDecoder {
+    buffer: Vec<u8>,
+}
+
+impl NdjsonDecoder {
+    fn push(&mut self, bytes: &[u8]) -> Result<Vec<OllamaChatChunk>> {
+        self.buffer.extend_from_slice(bytes);
+        if self.buffer.len() > MAX_NDJSON_FRAME_BYTES && !self.buffer.contains(&b'\n') {
+            return Err(anyhow!("Ollama stream frame exceeded the size limit"));
+        }
+        self.take_complete_lines()
+    }
+
+    fn finish(&mut self) -> Result<Vec<OllamaChatChunk>> {
+        let mut chunks = self.take_complete_lines()?;
+        if !self.buffer.iter().all(u8::is_ascii_whitespace) {
+            chunks.push(parse_line(&self.buffer)?);
+        }
+        self.buffer.clear();
+        Ok(chunks)
+    }
+
+    fn take_complete_lines(&mut self) -> Result<Vec<OllamaChatChunk>> {
+        let mut chunks = Vec::new();
+        while let Some(newline) = self.buffer.iter().position(|byte| *byte == b'\n') {
+            let line: Vec<u8> = self.buffer.drain(..=newline).collect();
+            let line = &line[..line.len() - 1];
+            if line.iter().all(u8::is_ascii_whitespace) {
+                continue;
+            }
+            chunks.push(parse_line(line)?);
+        }
+        Ok(chunks)
+    }
+}
+
+fn parse_line(line: &[u8]) -> Result<OllamaChatChunk> {
+    serde_json::from_slice(line).map_err(|error| anyhow!("Invalid Ollama stream frame: {}", error))
 }
 
 fn build_client() -> Result<reqwest::Client> {
     reqwest::Client::builder()
         .build()
         .map_err(|e| anyhow!("HTTP client build failed: {}", e))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::NdjsonDecoder;
+
+    #[test]
+    fn decoder_handles_split_json_and_utf8() {
+        let payload = "{\"message\":{\"content\":\"hello 🌍\"},\"done\":false}\n";
+        let bytes = payload.as_bytes();
+        let split = payload.find('🌍').expect("emoji") + 1;
+        let mut decoder = NdjsonDecoder::default();
+
+        assert!(decoder
+            .push(&bytes[..split])
+            .expect("first fragment")
+            .is_empty());
+        let chunks = decoder.push(&bytes[split..]).expect("second fragment");
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].message.as_ref().unwrap().content, "hello 🌍");
+    }
+
+    #[test]
+    fn decoder_reads_multiple_frames_per_chunk() {
+        let mut decoder = NdjsonDecoder::default();
+        let chunks = decoder
+            .push(
+                b"{\"message\":{\"content\":\"a\"},\"done\":false}\n{\"message\":null,\"done\":true}\n",
+            )
+            .expect("frames");
+        assert_eq!(chunks.len(), 2);
+        assert!(chunks[1].done);
+    }
+
+    #[test]
+    fn decoder_rejects_malformed_complete_frame() {
+        let mut decoder = NdjsonDecoder::default();
+        assert!(decoder.push(b"not-json\n").is_err());
+    }
+
+    #[test]
+    fn decoder_accepts_terminal_frame_without_newline() {
+        let mut decoder = NdjsonDecoder::default();
+        decoder
+            .push(b"{\"message\":null,\"done\":true}")
+            .expect("partial terminal frame");
+        let chunks = decoder.finish().expect("finish");
+        assert_eq!(chunks.len(), 1);
+        assert!(chunks[0].done);
+    }
 }

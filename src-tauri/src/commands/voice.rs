@@ -43,14 +43,15 @@ pub async fn start_listening(state: State<'_, AppState>, app: AppHandle) -> Resu
 
     let wav_path = temp_wav_path();
 
-    let stop_flag = audio::capture::start_recording(&device_name, wav_path.clone())
+    let recording = audio::capture::start_recording(&device_name, wav_path.clone())
         .map_err(|e| e.to_string())?;
 
     {
         let mut rec = state.recording.lock().unwrap();
         *rec = Some(ActiveRecording {
-            stop_flag: Arc::clone(&stop_flag),
+            stop_flag: Arc::clone(&recording.stop_flag),
             wav_path,
+            completed: recording.completed,
         });
     }
 
@@ -77,8 +78,16 @@ pub async fn stop_listening(state: State<'_, AppState>, app: AppHandle) -> Resul
 
     let _ = app.emit("audio:listening", false);
 
-    // Give the recording thread a moment to flush the WAV
-    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+    let completion = tokio::time::timeout(tokio::time::Duration::from_secs(5), recording.completed)
+        .await
+        .map_err(|_| "Timed out while finalizing the recording".to_string())?
+        .map_err(|_| "Recording worker stopped before finalizing audio".to_string())?;
+
+    if let Err(error) = completion {
+        let _ = std::fs::remove_file(&recording.wav_path);
+        let _ = app.emit("audio:error", &error);
+        return Err(error);
+    }
 
     let _ = app.emit("audio:processing", ());
 
@@ -93,17 +102,17 @@ pub async fn stop_listening(state: State<'_, AppState>, app: AppHandle) -> Resul
         (bin, mdl)
     };
 
-    let text = audio::stt::transcribe(&recording.wav_path, &whisper_binary, &whisper_model)
-        .await
-        .map_err(|e| {
-            let _ = app.emit("audio:error", e.to_string());
-            e.to_string()
-        })?;
+    let transcription =
+        audio::stt::transcribe(&recording.wav_path, &whisper_binary, &whisper_model).await;
 
     let _ = std::fs::remove_file(&recording.wav_path);
     let _ = app.emit("audio:processing", false);
 
-    Ok(text)
+    transcription.map_err(|error| {
+        let message = error.to_string();
+        let _ = app.emit("audio:error", &message);
+        message
+    })
 }
 
 fn temp_wav_path() -> PathBuf {

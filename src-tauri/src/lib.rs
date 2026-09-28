@@ -44,6 +44,7 @@ pub struct AppState {
 pub struct ActiveRecording {
     pub stop_flag: Arc<AtomicBool>,
     pub wav_path: PathBuf,
+    pub completed: tokio::sync::oneshot::Receiver<Result<(), String>>,
 }
 
 #[derive(Default)]
