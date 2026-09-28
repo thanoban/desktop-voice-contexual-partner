@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://voicepartner.local/contracts/event-envelope.schema.json",
+  "title": "VoicePartner event envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "event_id", "sequence", "occurred_at", "kind", "payload"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "event_id": { "type": "string", "format": "uuid" },
+    "sequence": { "type": "integer", "minimum": 0 },
+    "occurred_at": { "type": "integer", "minimum": 0 },
+    "session_id": { "type": ["string", "null"] },
+    "turn_id": { "type": ["string", "null"] },
+    "run_id": { "type": ["string", "null"] },
+    "kind": { "type": "string", "minLength": 1 },
+    "payload": {}
+  }
+}

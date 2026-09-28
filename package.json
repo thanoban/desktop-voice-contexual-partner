@@ -6,7 +6,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "check": "tsc --noEmit",
     "build": "tsc && vite build",
+    "verify:contracts": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-contracts.ps1",
     "preview": "vite preview",
     "tauri": "tauri"
   },

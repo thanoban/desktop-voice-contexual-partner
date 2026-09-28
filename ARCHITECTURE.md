@@ -4,7 +4,7 @@ Design date: 2026-09-27. This describes observed code and the proposed target se
 
 ## 1. Current implementation
 
-Baseline inspected: `be13b48` on main. Original local planning edits are preserved in [the archive](docs/archive/README.md).
+Baseline inspected: `be13b48` on main. The plan was published at `bc734ce`; Stage 0 implementation began afterward. Original local planning edits are preserved in [the archive](docs/archive/README.md).
 
 | Subsystem | Observed implementation | Required change |
 |---|---|---|
@@ -20,7 +20,7 @@ Baseline inspected: `be13b48` on main. Original local planning edits are preserv
 | Storage | Bundled SQLite; keyring dependency | Encryption and real credential-store use are not implemented |
 | Integration | Tauri commands/frontend wrappers | MCP, external-job lifecycle, provider and API services |
 
-Frontend production build passed. Native `cargo test --locked --offline` subsequently completed successfully with **zero tests**; this proves compilation, not runtime quality. No tracked automated suite or CI was found. Live speech, integrations, installer, and pilot qualification remain open.
+Frontend production build, strict Rust linting, and the initial nine domain/database tests pass. Windows CI and canonical contract fixtures now exist. This proves the foundation compiles and its declared invariants hold; live speech, integrations, installer behavior, and pilot qualification remain open.
 
 Also address TTS error cleanup, temporary files, model download integrity, and the currently disabled Content Security Policy before expanding privileged automation.
 

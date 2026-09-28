@@ -1,11 +1,11 @@
 use crate::audio;
 use crate::db;
-use crate::AppState;
 use crate::ActiveRecording;
-use tauri::{AppHandle, Emitter, State};
-use std::sync::Arc;
-use std::path::PathBuf;
+use crate::AppState;
 use serde::Serialize;
+use std::path::PathBuf;
+use std::sync::Arc;
+use tauri::{AppHandle, Emitter, State};
 
 #[derive(Debug, Serialize)]
 pub struct AudioDevice {
@@ -19,15 +19,15 @@ pub fn get_audio_devices() -> Vec<AudioDevice> {
     names
         .into_iter()
         .enumerate()
-        .map(|(i, name)| AudioDevice { name, is_default: i == 0 })
+        .map(|(i, name)| AudioDevice {
+            name,
+            is_default: i == 0,
+        })
         .collect()
 }
 
 #[tauri::command]
-pub async fn start_listening(
-    state: State<'_, AppState>,
-    app: AppHandle,
-) -> Result<(), String> {
+pub async fn start_listening(state: State<'_, AppState>, app: AppHandle) -> Result<(), String> {
     // Don't start if already recording
     {
         let rec = state.recording.lock().unwrap();
@@ -48,7 +48,10 @@ pub async fn start_listening(
 
     {
         let mut rec = state.recording.lock().unwrap();
-        *rec = Some(ActiveRecording { stop_flag: Arc::clone(&stop_flag), wav_path });
+        *rec = Some(ActiveRecording {
+            stop_flag: Arc::clone(&stop_flag),
+            wav_path,
+        });
     }
 
     let _ = app.emit("audio:listening", true);
@@ -56,10 +59,7 @@ pub async fn start_listening(
 }
 
 #[tauri::command]
-pub async fn stop_listening(
-    state: State<'_, AppState>,
-    app: AppHandle,
-) -> Result<String, String> {
+pub async fn stop_listening(state: State<'_, AppState>, app: AppHandle) -> Result<String, String> {
     let recording = {
         let mut rec = state.recording.lock().unwrap();
         rec.take()
@@ -71,7 +71,9 @@ pub async fn stop_listening(
     };
 
     // Signal the recording thread to stop
-    recording.stop_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+    recording
+        .stop_flag
+        .store(true, std::sync::atomic::Ordering::Relaxed);
 
     let _ = app.emit("audio:listening", false);
 
@@ -83,8 +85,11 @@ pub async fn stop_listening(
     let (whisper_binary, whisper_model) = {
         let db = state.db.lock().unwrap();
         let bin = db::get_setting(&db, "whisper_binary").unwrap_or_default();
-        let mdl = db::get_setting(&db, "whisper_model")
-            .unwrap_or_else(|| audio::stt::default_model_path().to_string_lossy().to_string());
+        let mdl = db::get_setting(&db, "whisper_model").unwrap_or_else(|| {
+            audio::stt::default_model_path()
+                .to_string_lossy()
+                .to_string()
+        });
         (bin, mdl)
     };
 

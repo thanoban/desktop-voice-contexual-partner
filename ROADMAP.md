@@ -1,10 +1,21 @@
 # VoicePartner — implementation roadmap
 
-Status date: 2026-09-27. This roadmap is an implementation ledger, not a calendar promise. A stage is complete only when its exit evidence exists. Planned support is not shipped support.
+Status date: 2026-09-28. This roadmap is an implementation ledger, not a calendar promise. A stage is complete only when its exit evidence exists. Planned support is not shipped support.
 
 ## Current baseline
 
-The checkout is `be13b48` on `main`. Existing local planning edits were preserved at `docs/archive/`. The frontend production build passed during inspection. Native `cargo test --locked --offline` completed with zero tests. No tracked CI workflow or automated test suite was found. Existing local voice, memory, RAG, and widget features require runtime qualification.
+The plan was published at `bc734ce` on `main`, with earlier local documents preserved at `docs/archive/`. S0 is now in progress: shared Rust/TypeScript contracts, canonical fixtures, timing primitives, Windows CI, and a local verification script are implemented. Nine Rust tests pass, including session lifecycle, run-state, policy-default, timing, and fixture tests. Existing local voice, memory, RAG, and widget features still require runtime qualification.
+
+### Current implementation evidence
+
+| Work | Status | Evidence |
+|---|---|---|
+| End-to-end plan and architecture | implemented | Planning commit `bc734ce` |
+| Contract foundations | unit-tested | Rust domain types, TypeScript mirrors, JSON schemas and fixtures |
+| Session creation semantics | unit-tested | A new session transaction closes prior open sessions; legacy reuse remains tested |
+| Verification pipeline | implemented | `scripts/verify.ps1` and `.github/workflows/verify.yml` |
+| Baseline automated suite | unit-tested | 9 passed, 0 failed on 2026-09-28 |
+| Live voice, provider, integration and installed-device behavior | planned | Requires the later stage gates below |
 
 ## Stage gates
 

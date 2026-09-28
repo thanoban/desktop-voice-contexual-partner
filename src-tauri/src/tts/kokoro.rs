@@ -57,11 +57,7 @@ pub async fn speak_kokoro(
 
     let status = tokio::task::spawn_blocking({
         let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-        move || {
-            Command::new("python")
-                .args(&args)
-                .status()
-        }
+        move || Command::new("python").args(&args).status()
     })
     .await
     .map_err(|e| anyhow!("Kokoro task panicked: {}", e))?
@@ -110,8 +106,14 @@ pub fn check_kokoro_available() -> (bool, bool) {
 /// The 10 Kokoro voice IDs shipped with kokoro-onnx v1.0.
 #[allow(dead_code)]
 pub const KOKORO_VOICE_IDS: &[&str] = &[
-    "af_bella", "af_sarah", "af_sky", "af_nicole",
-    "am_adam",  "am_michael",
-    "bf_emma",  "bf_isabella",
-    "bm_george","bm_lewis",
+    "af_bella",
+    "af_sarah",
+    "af_sky",
+    "af_nicole",
+    "am_adam",
+    "am_michael",
+    "bf_emma",
+    "bf_isabella",
+    "bm_george",
+    "bm_lewis",
 ];

@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Transcribe a WAV file using a whisper.cpp subprocess.
@@ -27,15 +27,18 @@ pub async fn transcribe(wav_path: &PathBuf, binary: &str, model: &str) -> Result
         .map_err(|e| anyhow!("Transcription task panicked: {}", e))?
 }
 
-fn run_whisper(wav_path: &PathBuf, binary: &str, model: &str) -> Result<String> {
+fn run_whisper(wav_path: &Path, binary: &str, model: &str) -> Result<String> {
     let output = Command::new(binary)
         .args([
-            "-m", model,
-            "-f", wav_path.to_str().unwrap_or(""),
-            "-nt",           // no timestamps
-            "-l", "en",
-            "--no-prints",   // suppress status output
-            "-otxt",         // write .txt file alongside WAV
+            "-m",
+            model,
+            "-f",
+            wav_path.to_str().unwrap_or(""),
+            "-nt", // no timestamps
+            "-l",
+            "en",
+            "--no-prints", // suppress status output
+            "-otxt",       // write .txt file alongside WAV
         ])
         .output()
         .map_err(|e| anyhow!("Failed to run whisper binary '{}': {}", binary, e))?;

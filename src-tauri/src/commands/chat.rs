@@ -22,20 +22,32 @@ fn format_age(created_at_ms: i64) -> String {
 
 fn personality_prompt(preset: &str, name: &str) -> String {
     let tone = match preset {
-        "gentle" => "You are warm, patient, and gently encouraging. You notice how the user is \
-                     feeling and respond with care. You're present and attentive.",
-        "playful" => "You are witty, light-hearted, and fun. You bring levity to conversations \
-                      without being flippant. You enjoy wordplay and gentle humour.",
-        "calm" => "You are steady, measured, and quietly supportive. You speak with unhurried \
-                   clarity. You are a grounding presence.",
-        "energetic" => "You are enthusiastic and motivating. You celebrate small wins with \
-                        genuine excitement and help the user feel capable.",
-        "mentor" => "You are wise and encouraging. You guide the user's growth by sharing \
+        "gentle" => {
+            "You are warm, patient, and gently encouraging. You notice how the user is \
+                     feeling and respond with care. You're present and attentive."
+        }
+        "playful" => {
+            "You are witty, light-hearted, and fun. You bring levity to conversations \
+                      without being flippant. You enjoy wordplay and gentle humour."
+        }
+        "calm" => {
+            "You are steady, measured, and quietly supportive. You speak with unhurried \
+                   clarity. You are a grounding presence."
+        }
+        "energetic" => {
+            "You are enthusiastic and motivating. You celebrate small wins with \
+                        genuine excitement and help the user feel capable."
+        }
+        "mentor" => {
+            "You are wise and encouraging. You guide the user's growth by sharing \
                      thoughtful insights, asking good questions, and celebrating their progress. \
-                     You believe deeply in their potential.",
-        "caring" => "You are deeply empathetic and nurturing. You listen attentively, validate \
+                     You believe deeply in their potential."
+        }
+        "caring" => {
+            "You are deeply empathetic and nurturing. You listen attentively, validate \
                      feelings without judgment, and offer comfort. You make the user feel truly \
-                     heard and understood.",
+                     heard and understood."
+        }
         _ => "You are a warm and thoughtful companion.",
     };
 
@@ -62,27 +74,46 @@ pub async fn send_message(
     let distress = safety::check(&content);
 
     // DB work — all sync, no .await held
-    let (session_id, model, endpoint, personality, name, piper_binary, piper_voice,
-         voice_speed, voice_expressiveness, window_context_auto, embedding_model,
-         custom_system_prompt, kokoro_model, kokoro_voices) = {
+    let (
+        session_id,
+        model,
+        endpoint,
+        personality,
+        name,
+        piper_binary,
+        piper_voice,
+        voice_speed,
+        voice_expressiveness,
+        window_context_auto,
+        embedding_model,
+        custom_system_prompt,
+        kokoro_model,
+        kokoro_voices,
+    ) = {
         let conn = state.db.lock().map_err(|e| e.to_string())?;
         let sid = db::ensure_session(&conn).map_err(|e| e.to_string())?;
         db::save_turn(&conn, &sid, "user", &content).map_err(|e| e.to_string())?;
-        let model    = db::get_setting(&conn, "model").unwrap_or_else(|| "llama3.2:8b".into());
-        let endpoint = db::get_setting(&conn, "endpoint").unwrap_or_else(|| "http://localhost:11434".into());
-        let persona  = db::get_setting(&conn, "personality").unwrap_or_else(|| "gentle".into());
-        let name     = db::get_setting(&conn, "companion_name").unwrap_or_else(|| "Amy".into());
-        let piper    = db::get_setting(&conn, "piper_binary").unwrap_or_default();
-        let voice    = db::get_setting(&conn, "piper_voice").unwrap_or_else(|| "en_US-amy-medium".into());
-        let speed    = db::get_setting(&conn, "voice_speed").unwrap_or_else(|| "1.0".into());
-        let expr     = db::get_setting(&conn, "voice_expressiveness").unwrap_or_else(|| "0.667".into());
-        let ctx_auto    = db::get_setting(&conn, "window_context_auto").unwrap_or_else(|| "false".into());
-        let emb_mdl     = db::get_setting(&conn, "embedding_model").unwrap_or_else(|| "nomic-embed-text".into());
-        let custom_sys  = db::get_setting(&conn, "custom_system_prompt").unwrap_or_default();
-        let kok_model   = db::get_setting(&conn, "kokoro_model").unwrap_or_default();
-        let kok_voices  = db::get_setting(&conn, "kokoro_voices").unwrap_or_default();
-        (sid, model, endpoint, persona, name, piper, voice, speed, expr, ctx_auto, emb_mdl,
-         custom_sys, kok_model, kok_voices)
+        let model = db::get_setting(&conn, "model").unwrap_or_else(|| "llama3.2:8b".into());
+        let endpoint =
+            db::get_setting(&conn, "endpoint").unwrap_or_else(|| "http://localhost:11434".into());
+        let persona = db::get_setting(&conn, "personality").unwrap_or_else(|| "gentle".into());
+        let name = db::get_setting(&conn, "companion_name").unwrap_or_else(|| "Amy".into());
+        let piper = db::get_setting(&conn, "piper_binary").unwrap_or_default();
+        let voice =
+            db::get_setting(&conn, "piper_voice").unwrap_or_else(|| "en_US-amy-medium".into());
+        let speed = db::get_setting(&conn, "voice_speed").unwrap_or_else(|| "1.0".into());
+        let expr = db::get_setting(&conn, "voice_expressiveness").unwrap_or_else(|| "0.667".into());
+        let ctx_auto =
+            db::get_setting(&conn, "window_context_auto").unwrap_or_else(|| "false".into());
+        let emb_mdl =
+            db::get_setting(&conn, "embedding_model").unwrap_or_else(|| "nomic-embed-text".into());
+        let custom_sys = db::get_setting(&conn, "custom_system_prompt").unwrap_or_default();
+        let kok_model = db::get_setting(&conn, "kokoro_model").unwrap_or_default();
+        let kok_voices = db::get_setting(&conn, "kokoro_voices").unwrap_or_default();
+        (
+            sid, model, endpoint, persona, name, piper, voice, speed, expr, ctx_auto, emb_mdl,
+            custom_sys, kok_model, kok_voices,
+        )
     }; // MutexGuard dropped here
 
     // Build recent context
@@ -110,7 +141,13 @@ pub async fn send_message(
         } else {
             let lines: Vec<String> = relevant
                 .iter()
-                .map(|r| format!("• {}: {}", format_age(r.memory.created_at), r.memory.content))
+                .map(|r| {
+                    format!(
+                        "• {}: {}",
+                        format_age(r.memory.created_at),
+                        r.memory.content
+                    )
+                })
                 .collect();
             Some(format!(
                 "[MEMORIES — relevant things from past conversations]\n{}\n[/MEMORIES]",
@@ -130,12 +167,20 @@ pub async fn send_message(
         } else {
             None
         };
-        let note = if ctx.sharing { ctx.custom_note.clone() } else { None };
+        let note = if ctx.sharing {
+            ctx.custom_note.clone()
+        } else {
+            None
+        };
 
         if title.is_some() || note.is_some() {
             let mut parts = Vec::new();
-            if let Some(ref t) = title { parts.push(format!("Active window: {}", t)); }
-            if let Some(ref n) = note  { parts.push(format!("User note: {}", n)); }
+            if let Some(ref t) = title {
+                parts.push(format!("Active window: {}", t));
+            }
+            if let Some(ref n) = note {
+                parts.push(format!("User note: {}", n));
+            }
             Some(format!(
                 "[CONTEXT — what the user is working on right now]\n{}\n[/CONTEXT]",
                 parts.join("\n")
@@ -166,7 +211,10 @@ pub async fn send_message(
         content: system_prompt,
     }];
     for (role, text) in &recent_turns {
-        messages.push(ChatMessage { role: role.clone(), content: text.clone() });
+        messages.push(ChatMessage {
+            role: role.clone(),
+            content: text.clone(),
+        });
     }
 
     // Stream from Ollama
@@ -200,28 +248,36 @@ pub async fn send_message(
 
     // Background: summarize + embed + store memory every 4 turns (4, 8, 12, ...)
     {
-        let app_bg    = app.clone();
-        let ep_bg     = endpoint.clone();
-        let m_bg      = model.clone();
-        let em_bg     = embedding_model.clone();
-        let sid_bg    = session_id.clone();
+        let app_bg = app.clone();
+        let ep_bg = endpoint.clone();
+        let m_bg = model.clone();
+        let em_bg = embedding_model.clone();
+        let sid_bg = session_id.clone();
         tokio::spawn(async move {
-            if em_bg.is_empty() { return; }
+            if em_bg.is_empty() {
+                return;
+            }
 
             let (turn_count, recent_turns) = {
                 let state = app_bg.state::<AppState>();
-                let conn = match state.db.lock() { Ok(c) => c, Err(_) => return };
+                let conn = match state.db.lock() {
+                    Ok(c) => c,
+                    Err(_) => return,
+                };
                 let count = db::get_turn_count(&conn, &sid_bg).unwrap_or(0);
                 let turns = db::get_recent_turns(&conn, &sid_bg, 8);
                 (count, turns)
             };
 
-            if turn_count < 4 || turn_count % 4 != 0 { return; }
+            if turn_count < 4 || turn_count % 4 != 0 {
+                return;
+            }
 
-            let summary = match crate::summarize::summarize_session(&ep_bg, &m_bg, &recent_turns).await {
-                Ok(s) => s,
-                Err(_) => return,
-            };
+            let summary =
+                match crate::summarize::summarize_session(&ep_bg, &m_bg, &recent_turns).await {
+                    Ok(s) => s,
+                    Err(_) => return,
+                };
 
             let embedding = match crate::embed::embed_text(&ep_bg, &em_bg, &summary).await {
                 Ok(e) => e,
@@ -229,26 +285,36 @@ pub async fn send_message(
             };
 
             let state = app_bg.state::<AppState>();
-            let conn = match state.db.lock() { Ok(c) => c, Err(_) => return };
+            let conn = match state.db.lock() {
+                Ok(c) => c,
+                Err(_) => return,
+            };
             let _ = memory::store_memory(&conn, &sid_bg, &summary, &embedding, "session_summary");
         });
     }
 
     // Speak TTS — fires for piper, sapi:, or kokoro: voices (best-effort, non-fatal)
     if !piper_voice.is_empty() {
-        let speed  = voice_speed.parse::<f32>().unwrap_or(1.0);
-        let expr   = voice_expressiveness.parse::<f32>().unwrap_or(0.667);
-        let app_clone    = app.clone();
-        let voice_clone  = piper_voice.clone();
+        let speed = voice_speed.parse::<f32>().unwrap_or(1.0);
+        let expr = voice_expressiveness.parse::<f32>().unwrap_or(0.667);
+        let app_clone = app.clone();
+        let voice_clone = piper_voice.clone();
         let binary_clone = piper_binary.clone();
-        let text_clone   = final_response.clone();
+        let text_clone = final_response.clone();
         let kok_m = kokoro_model.clone();
         let kok_v = kokoro_voices.clone();
         tokio::spawn(async move {
             let _ = crate::tts::piper::speak(
-                &app_clone, &binary_clone, &voice_clone, &text_clone,
-                speed, expr, &kok_m, &kok_v,
-            ).await;
+                &app_clone,
+                &binary_clone,
+                &voice_clone,
+                &text_clone,
+                speed,
+                expr,
+                &kok_m,
+                &kok_v,
+            )
+            .await;
         });
     }
 
@@ -256,25 +322,37 @@ pub async fn send_message(
 }
 
 #[tauri::command]
-pub async fn get_greeting(
-    state: State<'_, AppState>,
-    app: AppHandle,
-) -> Result<(), String> {
-    let (session_id, model, endpoint, personality, name, piper_binary, piper_voice,
-         voice_speed, voice_expressiveness, kokoro_model, kokoro_voices) = {
+pub async fn get_greeting(state: State<'_, AppState>, app: AppHandle) -> Result<(), String> {
+    let (
+        session_id,
+        model,
+        endpoint,
+        personality,
+        name,
+        piper_binary,
+        piper_voice,
+        voice_speed,
+        voice_expressiveness,
+        kokoro_model,
+        kokoro_voices,
+    ) = {
         let conn = state.db.lock().map_err(|e| e.to_string())?;
         let sid = db::ensure_session(&conn).map_err(|e| e.to_string())?;
-        let model    = db::get_setting(&conn, "model").unwrap_or_else(|| "llama3.2:8b".into());
-        let endpoint = db::get_setting(&conn, "endpoint").unwrap_or_else(|| "http://localhost:11434".into());
-        let persona  = db::get_setting(&conn, "personality").unwrap_or_else(|| "gentle".into());
-        let name     = db::get_setting(&conn, "companion_name").unwrap_or_else(|| "Amy".into());
-        let piper    = db::get_setting(&conn, "piper_binary").unwrap_or_default();
-        let voice    = db::get_setting(&conn, "piper_voice").unwrap_or_else(|| "en_US-amy-medium".into());
-        let speed    = db::get_setting(&conn, "voice_speed").unwrap_or_else(|| "1.0".into());
-        let expr     = db::get_setting(&conn, "voice_expressiveness").unwrap_or_else(|| "0.667".into());
-        let kok_m    = db::get_setting(&conn, "kokoro_model").unwrap_or_default();
-        let kok_v    = db::get_setting(&conn, "kokoro_voices").unwrap_or_default();
-        (sid, model, endpoint, persona, name, piper, voice, speed, expr, kok_m, kok_v)
+        let model = db::get_setting(&conn, "model").unwrap_or_else(|| "llama3.2:8b".into());
+        let endpoint =
+            db::get_setting(&conn, "endpoint").unwrap_or_else(|| "http://localhost:11434".into());
+        let persona = db::get_setting(&conn, "personality").unwrap_or_else(|| "gentle".into());
+        let name = db::get_setting(&conn, "companion_name").unwrap_or_else(|| "Amy".into());
+        let piper = db::get_setting(&conn, "piper_binary").unwrap_or_default();
+        let voice =
+            db::get_setting(&conn, "piper_voice").unwrap_or_else(|| "en_US-amy-medium".into());
+        let speed = db::get_setting(&conn, "voice_speed").unwrap_or_else(|| "1.0".into());
+        let expr = db::get_setting(&conn, "voice_expressiveness").unwrap_or_else(|| "0.667".into());
+        let kok_m = db::get_setting(&conn, "kokoro_model").unwrap_or_default();
+        let kok_v = db::get_setting(&conn, "kokoro_voices").unwrap_or_default();
+        (
+            sid, model, endpoint, persona, name, piper, voice, speed, expr, kok_m, kok_v,
+        )
     };
 
     let turns_today = {
@@ -317,13 +395,20 @@ pub async fn get_greeting(
 
     if !piper_voice.is_empty() {
         let speed = voice_speed.parse::<f32>().unwrap_or(1.0);
-        let expr  = voice_expressiveness.parse::<f32>().unwrap_or(0.667);
+        let expr = voice_expressiveness.parse::<f32>().unwrap_or(0.667);
         let app_clone = app.clone();
         tokio::spawn(async move {
             let _ = crate::tts::piper::speak(
-                &app_clone, &piper_binary, &piper_voice, &full_response,
-                speed, expr, &kokoro_model, &kokoro_voices,
-            ).await;
+                &app_clone,
+                &piper_binary,
+                &piper_voice,
+                &full_response,
+                speed,
+                expr,
+                &kokoro_model,
+                &kokoro_voices,
+            )
+            .await;
         });
     }
 
@@ -333,7 +418,7 @@ pub async fn get_greeting(
 #[tauri::command]
 pub fn start_new_session(state: State<'_, AppState>) -> Result<String, String> {
     let conn = state.db.lock().map_err(|e| e.to_string())?;
-    db::ensure_session(&conn).map_err(|e| e.to_string())
+    db::create_session(&conn).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -357,9 +442,24 @@ pub async fn speak_text(
         let e = db::get_setting(&conn, "voice_expressiveness").unwrap_or_else(|| "0.667".into());
         let km = db::get_setting(&conn, "kokoro_model").unwrap_or_default();
         let kv = db::get_setting(&conn, "kokoro_voices").unwrap_or_default();
-        (binary, s.parse::<f32>().unwrap_or(1.0), e.parse::<f32>().unwrap_or(0.667), km, kv)
+        (
+            binary,
+            s.parse::<f32>().unwrap_or(1.0),
+            e.parse::<f32>().unwrap_or(0.667),
+            km,
+            kv,
+        )
     };
-    crate::tts::piper::speak(&app, &piper_binary, &voice, &text, speed, expr, &kokoro_model, &kokoro_voices)
-        .await
-        .map_err(|e| e.to_string())
+    crate::tts::piper::speak(
+        &app,
+        &piper_binary,
+        &voice,
+        &text,
+        speed,
+        expr,
+        &kokoro_model,
+        &kokoro_voices,
+    )
+    .await
+    .map_err(|e| e.to_string())
 }

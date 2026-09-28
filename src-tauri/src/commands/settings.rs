@@ -41,26 +41,26 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            endpoint:            "http://localhost:11434".into(),
-            model:               "llama3.2:8b".into(),
-            companion_name:      "Amy".into(),
-            personality:         "gentle".into(),
-            onboarding_done:     "false".into(),
-            piper_binary:        String::new(),
-            piper_voice:         "en_US-amy-medium".into(),
-            audio_input_device:  "default".into(),
-            whisper_binary:      String::new(),
-            whisper_model:       String::new(),
-            voice_threshold_db:  "-30".into(),
-            window_context_auto:    "false".into(),
+            endpoint: "http://localhost:11434".into(),
+            model: "llama3.2:8b".into(),
+            companion_name: "Amy".into(),
+            personality: "gentle".into(),
+            onboarding_done: "false".into(),
+            piper_binary: String::new(),
+            piper_voice: "en_US-amy-medium".into(),
+            audio_input_device: "default".into(),
+            whisper_binary: String::new(),
+            whisper_model: String::new(),
+            voice_threshold_db: "-30".into(),
+            window_context_auto: "false".into(),
             window_context_allowed: "unset".into(),
-            voice_speed:          "1.0".into(),
+            voice_speed: "1.0".into(),
             voice_expressiveness: "0.667".into(),
-            embedding_model:       "nomic-embed-text".into(),
-            custom_system_prompt:  String::new(),
-            custom_voices:         "[]".into(),
-            kokoro_model:          String::new(),
-            kokoro_voices:         String::new(),
+            embedding_model: "nomic-embed-text".into(),
+            custom_system_prompt: String::new(),
+            custom_voices: "[]".into(),
+            kokoro_model: String::new(),
+            kokoro_voices: String::new(),
         }
     }
 }
@@ -72,26 +72,65 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<Settings, String> {
     let d = Settings::default();
 
     Ok(Settings {
-        endpoint:            pairs.get("endpoint").cloned().unwrap_or(d.endpoint),
-        model:               pairs.get("model").cloned().unwrap_or(d.model),
-        companion_name:      pairs.get("companion_name").cloned().unwrap_or(d.companion_name),
-        personality:         pairs.get("personality").cloned().unwrap_or(d.personality),
-        onboarding_done:     pairs.get("onboarding_done").cloned().unwrap_or(d.onboarding_done),
-        piper_binary:        pairs.get("piper_binary").cloned().unwrap_or(d.piper_binary),
-        piper_voice:         pairs.get("piper_voice").cloned().unwrap_or(d.piper_voice),
-        audio_input_device:  pairs.get("audio_input_device").cloned().unwrap_or(d.audio_input_device),
-        whisper_binary:      pairs.get("whisper_binary").cloned().unwrap_or(d.whisper_binary),
-        whisper_model:       pairs.get("whisper_model").cloned().unwrap_or(d.whisper_model),
-        voice_threshold_db:  pairs.get("voice_threshold_db").cloned().unwrap_or(d.voice_threshold_db),
-        window_context_auto:  pairs.get("window_context_auto").cloned().unwrap_or(d.window_context_auto),
-        voice_speed:          pairs.get("voice_speed").cloned().unwrap_or(d.voice_speed),
-        voice_expressiveness: pairs.get("voice_expressiveness").cloned().unwrap_or(d.voice_expressiveness),
-        embedding_model:         pairs.get("embedding_model").cloned().unwrap_or(d.embedding_model),
-        custom_system_prompt:    pairs.get("custom_system_prompt").cloned().unwrap_or(d.custom_system_prompt),
-        window_context_allowed:  pairs.get("window_context_allowed").cloned().unwrap_or(d.window_context_allowed),
-        custom_voices:           pairs.get("custom_voices").cloned().unwrap_or(d.custom_voices),
-        kokoro_model:            pairs.get("kokoro_model").cloned().unwrap_or(d.kokoro_model),
-        kokoro_voices:           pairs.get("kokoro_voices").cloned().unwrap_or(d.kokoro_voices),
+        endpoint: pairs.get("endpoint").cloned().unwrap_or(d.endpoint),
+        model: pairs.get("model").cloned().unwrap_or(d.model),
+        companion_name: pairs
+            .get("companion_name")
+            .cloned()
+            .unwrap_or(d.companion_name),
+        personality: pairs.get("personality").cloned().unwrap_or(d.personality),
+        onboarding_done: pairs
+            .get("onboarding_done")
+            .cloned()
+            .unwrap_or(d.onboarding_done),
+        piper_binary: pairs.get("piper_binary").cloned().unwrap_or(d.piper_binary),
+        piper_voice: pairs.get("piper_voice").cloned().unwrap_or(d.piper_voice),
+        audio_input_device: pairs
+            .get("audio_input_device")
+            .cloned()
+            .unwrap_or(d.audio_input_device),
+        whisper_binary: pairs
+            .get("whisper_binary")
+            .cloned()
+            .unwrap_or(d.whisper_binary),
+        whisper_model: pairs
+            .get("whisper_model")
+            .cloned()
+            .unwrap_or(d.whisper_model),
+        voice_threshold_db: pairs
+            .get("voice_threshold_db")
+            .cloned()
+            .unwrap_or(d.voice_threshold_db),
+        window_context_auto: pairs
+            .get("window_context_auto")
+            .cloned()
+            .unwrap_or(d.window_context_auto),
+        voice_speed: pairs.get("voice_speed").cloned().unwrap_or(d.voice_speed),
+        voice_expressiveness: pairs
+            .get("voice_expressiveness")
+            .cloned()
+            .unwrap_or(d.voice_expressiveness),
+        embedding_model: pairs
+            .get("embedding_model")
+            .cloned()
+            .unwrap_or(d.embedding_model),
+        custom_system_prompt: pairs
+            .get("custom_system_prompt")
+            .cloned()
+            .unwrap_or(d.custom_system_prompt),
+        window_context_allowed: pairs
+            .get("window_context_allowed")
+            .cloned()
+            .unwrap_or(d.window_context_allowed),
+        custom_voices: pairs
+            .get("custom_voices")
+            .cloned()
+            .unwrap_or(d.custom_voices),
+        kokoro_model: pairs.get("kokoro_model").cloned().unwrap_or(d.kokoro_model),
+        kokoro_voices: pairs
+            .get("kokoro_voices")
+            .cloned()
+            .unwrap_or(d.kokoro_voices),
     })
 }
 

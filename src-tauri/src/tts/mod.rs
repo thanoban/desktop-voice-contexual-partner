@@ -2,12 +2,12 @@ pub mod kokoro;
 pub mod piper;
 
 use anyhow::{anyhow, Result};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 // ── Shared audio helpers (used by both piper and kokoro) ─────────────────────
 
-pub(crate) fn play_wav(path: &PathBuf) -> Result<()> {
+pub(crate) fn play_wav(path: &Path) -> Result<()> {
     #[cfg(target_os = "windows")]
     {
         Command::new("powershell")

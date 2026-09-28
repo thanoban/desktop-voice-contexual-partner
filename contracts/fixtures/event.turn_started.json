@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "event_id": "9c40fd48-3187-4bbb-a4cf-71bc392fd212",
+  "sequence": 1,
+  "occurred_at": 1790467200000,
+  "session_id": "session-fixture",
+  "turn_id": "turn-fixture",
+  "run_id": null,
+  "kind": "turn.started",
+  "payload": {
+    "input_kind": "text"
+  }
+}

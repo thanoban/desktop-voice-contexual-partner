@@ -20,9 +20,7 @@ pub fn set_setting(conn: &Connection, key: &str, value: &str) -> Result<()> {
 }
 
 pub fn get_all_settings(conn: &Connection) -> Vec<(String, String)> {
-    let mut stmt = conn
-        .prepare("SELECT key, value FROM settings")
-        .unwrap();
+    let mut stmt = conn.prepare("SELECT key, value FROM settings").unwrap();
     stmt.query_map([], |row| {
         Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
     })
@@ -52,6 +50,22 @@ pub fn ensure_session(conn: &Connection) -> Result<String> {
     }
 }
 
+pub fn create_session(conn: &Connection) -> Result<String> {
+    let timestamp = now_ms();
+    let id = uuid::Uuid::new_v4().to_string();
+    let transaction = conn.unchecked_transaction()?;
+    transaction.execute(
+        "UPDATE sessions SET ended_at = ?1 WHERE ended_at IS NULL",
+        rusqlite::params![timestamp],
+    )?;
+    transaction.execute(
+        "INSERT INTO sessions (id, started_at) VALUES (?1, ?2)",
+        rusqlite::params![id, timestamp],
+    )?;
+    transaction.commit()?;
+    Ok(id)
+}
+
 #[allow(dead_code)]
 pub fn close_session(conn: &Connection, session_id: &str) -> Result<()> {
     conn.execute(
@@ -78,7 +92,11 @@ pub fn get_turn_count(conn: &Connection, session_id: &str) -> rusqlite::Result<i
     )
 }
 
-pub fn get_recent_turns(conn: &Connection, session_id: &str, limit: usize) -> Vec<(String, String)> {
+pub fn get_recent_turns(
+    conn: &Connection,
+    session_id: &str,
+    limit: usize,
+) -> Vec<(String, String)> {
     let mut stmt = conn
         .prepare(
             "SELECT role, content FROM turns WHERE session_id = ?1 \
@@ -153,4 +171,40 @@ fn now_ms() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_millis() as i64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{create_session, ensure_session};
+
+    fn database() -> rusqlite::Connection {
+        let connection = rusqlite::Connection::open_in_memory().expect("in-memory database");
+        super::migrations::run(&connection).expect("migrations");
+        connection
+    }
+
+    #[test]
+    fn ensure_session_reuses_recent_open_session() {
+        let connection = database();
+        let first = ensure_session(&connection).expect("first session");
+        let second = ensure_session(&connection).expect("second session");
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn create_session_closes_previous_session() {
+        let connection = database();
+        let first = ensure_session(&connection).expect("first session");
+        let second = create_session(&connection).expect("new session");
+        assert_ne!(first, second);
+
+        let ended_at: Option<i64> = connection
+            .query_row(
+                "SELECT ended_at FROM sessions WHERE id = ?1",
+                rusqlite::params![first],
+                |row| row.get(0),
+            )
+            .expect("old session exists");
+        assert!(ended_at.is_some());
+    }
 }

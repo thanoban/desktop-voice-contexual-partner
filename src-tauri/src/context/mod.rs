@@ -20,14 +20,12 @@ fn windows_active_title() -> Option<String> {
     use std::os::windows::ffi::OsStringExt;
 
     // Safe FFI to Win32 APIs
-    type HWND = *mut std::ffi::c_void;
-    #[allow(dead_code)]
-    type BOOL = i32;
+    type Hwnd = *mut std::ffi::c_void;
 
     extern "system" {
-        fn GetForegroundWindow() -> HWND;
-        fn GetWindowTextW(hwnd: HWND, lpstring: *mut u16, nmaxcount: i32) -> i32;
-        fn GetWindowTextLengthW(hwnd: HWND) -> i32;
+        fn GetForegroundWindow() -> Hwnd;
+        fn GetWindowTextW(hwnd: Hwnd, lpstring: *mut u16, nmaxcount: i32) -> i32;
+        fn GetWindowTextLengthW(hwnd: Hwnd) -> i32;
     }
 
     unsafe {
@@ -62,7 +60,11 @@ fn macos_active_title() -> Option<String> {
         .output()
         .ok()?;
     let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if name.is_empty() { None } else { Some(name) }
+    if name.is_empty() {
+        None
+    } else {
+        Some(name)
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -73,5 +75,9 @@ fn linux_active_title() -> Option<String> {
         .output()
         .ok()?;
     let title = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if title.is_empty() { None } else { Some(title) }
+    if title.is_empty() {
+        None
+    } else {
+        Some(title)
+    }
 }

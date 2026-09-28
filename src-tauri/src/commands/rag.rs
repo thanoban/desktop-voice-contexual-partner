@@ -35,10 +35,7 @@ pub fn pick_document(app: AppHandle) -> Option<String> {
 /// Returns immediately; progress is emitted via `rag:progress` events.
 /// Emits `rag:done` on success, `rag:error` on failure.
 #[tauri::command]
-pub async fn ingest_document(
-    app: AppHandle,
-    path: String,
-) -> Result<String, String> {
+pub async fn ingest_document(app: AppHandle, path: String) -> Result<String, String> {
     let path_buf = PathBuf::from(&path);
     let source_file = path_buf
         .file_name()
@@ -53,19 +50,18 @@ pub async fn ingest_document(
         let state = app_bg.state::<AppState>();
 
         // Extract text (CPU-bound — spawn_blocking so we don't stall Tokio)
-        let text = match tokio::task::spawn_blocking(move || crate::rag::extract_text(&path_buf))
-            .await
-        {
-            Ok(Ok(t)) => t,
-            Ok(Err(e)) => {
-                let _ = app_bg.emit("rag:error", e.to_string());
-                return;
-            }
-            Err(_) => {
-                let _ = app_bg.emit("rag:error", "Text extraction task panicked");
-                return;
-            }
-        };
+        let text =
+            match tokio::task::spawn_blocking(move || crate::rag::extract_text(&path_buf)).await {
+                Ok(Ok(t)) => t,
+                Ok(Err(e)) => {
+                    let _ = app_bg.emit("rag:error", e.to_string());
+                    return;
+                }
+                Err(_) => {
+                    let _ = app_bg.emit("rag:error", "Text extraction task panicked");
+                    return;
+                }
+            };
 
         let chunks = crate::rag::chunk_text(&text, 450, 80);
         let total = chunks.len();
@@ -75,7 +71,14 @@ pub async fn ingest_document(
             return;
         }
 
-        let _ = app_bg.emit("rag:progress", IngestProgress { source: src.clone(), current: 0, total });
+        let _ = app_bg.emit(
+            "rag:progress",
+            IngestProgress {
+                source: src.clone(),
+                current: 0,
+                total,
+            },
+        );
 
         // Read embedding settings (drop lock before any await)
         let (endpoint, embedding_model) = {
@@ -118,11 +121,21 @@ pub async fn ingest_document(
 
             let _ = app_bg.emit(
                 "rag:progress",
-                IngestProgress { source: src.clone(), current: i + 1, total },
+                IngestProgress {
+                    source: src.clone(),
+                    current: i + 1,
+                    total,
+                },
             );
         }
 
-        let _ = app_bg.emit("rag:done", IngestResult { source: src, chunks: stored });
+        let _ = app_bg.emit(
+            "rag:done",
+            IngestResult {
+                source: src,
+                chunks: stored,
+            },
+        );
     });
 
     Ok(source_file)

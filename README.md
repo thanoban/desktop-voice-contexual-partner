@@ -2,7 +2,7 @@
 
 VoicePartner is planned as a local-first personal voice partner for people who work at a PC. It combines warm conversation, continuity, quiet company, and useful work assistance. Optional MCP, OpenClaw, n8n, Zapier, editor, browser, and Windows integrations extend what it can do.
 
-This checkout currently contains the existing v1 implementation plus a documentation-only end-to-end product and architecture plan. The new ecosystem described in the plan is not claimed to be implemented yet.
+This checkout contains the existing v1 companion and the end-to-end product and architecture plan. Stage 0 implementation has begun with versioned domain contracts, canonical fixtures, timing primitives, a reliable new-session operation, automated Rust tests, and Windows CI. The provider and automation ecosystem remains planned until its later stage gates pass.
 
 Start with [PLAN.md](PLAN.md), then read [ARCHITECTURE.md](ARCHITECTURE.md), [docs/project-structure.md](docs/project-structure.md), [docs/integrations.md](docs/integrations.md), and [ROADMAP.md](ROADMAP.md). Historical documents and prior local notes are preserved under [docs/archive](docs/archive/README.md).
 
@@ -10,7 +10,7 @@ Start with [PLAN.md](PLAN.md), then read [ARCHITECTURE.md](ARCHITECTURE.md), [do
 
 The existing app includes a Tauri desktop shell, React interface, Ollama text streaming, CPAL/whisper.cpp voice input, Piper/SAPI/Kokoro speech paths, SQLite history and memory, document ingestion, window context, system tray/widget behavior, and setup downloads. It still has known gaps around warm inference, VAD, sentence streaming, native cancellation, encryption, indexed retrieval, provider abstraction, permissions, and integrations.
 
-`npm run build` and `cargo test --locked --offline --manifest-path src-tauri/Cargo.toml` are the initial reproducibility checks. The current Rust test run has zero tests; these commands do not qualify live audio, cloud providers, integrations, installer behavior, or the companionship experience.
+Run `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1` for contract validation, the frontend production build, Rust formatting and lints, and Rust tests. These checks do not qualify live audio, cloud providers, integrations, installer behavior, or the companionship experience.
 
 ## Development principles
 

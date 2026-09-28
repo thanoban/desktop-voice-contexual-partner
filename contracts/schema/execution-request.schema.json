@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://voicepartner.local/contracts/execution-request.schema.json",
+  "title": "VoicePartner execution request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "capability_id", "arguments", "context_refs", "ancestry"],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "capability_id": { "type": "string", "minLength": 1 },
+    "project_id": { "type": ["string", "null"] },
+    "session_id": { "type": ["string", "null"] },
+    "arguments": {},
+    "objective": { "type": ["string", "null"] },
+    "context_refs": { "type": "array", "items": { "type": "string" }, "maxItems": 64 },
+    "grant_id": { "type": ["string", "null"] },
+    "deadline_at": { "type": ["integer", "null"], "minimum": 0 },
+    "budget_micros": { "type": ["integer", "null"], "minimum": 0 },
+    "ancestry": { "type": "array", "items": { "type": "string" }, "maxItems": 3 }
+  }
+}

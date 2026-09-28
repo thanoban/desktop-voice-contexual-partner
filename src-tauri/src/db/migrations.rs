@@ -5,18 +5,25 @@ pub fn run(conn: &Connection) -> anyhow::Result<()> {
     conn.execute_batch("PRAGMA foreign_keys=ON;")?;
     conn.execute_batch("PRAGMA synchronous=NORMAL;")?;
 
-    conn.execute_batch("
+    conn.execute_batch(
+        "
         CREATE TABLE IF NOT EXISTS schema_version (
             version INTEGER PRIMARY KEY
         );
-    ")?;
+    ",
+    )?;
 
     let version: i64 = conn
-        .query_row("SELECT COALESCE(MAX(version), 0) FROM schema_version", [], |r| r.get(0))
+        .query_row(
+            "SELECT COALESCE(MAX(version), 0) FROM schema_version",
+            [],
+            |r| r.get(0),
+        )
         .unwrap_or(0);
 
     if version < 1 {
-        conn.execute_batch("
+        conn.execute_batch(
+            "
             CREATE TABLE IF NOT EXISTS settings (
                 key   TEXT PRIMARY KEY,
                 value TEXT NOT NULL
@@ -47,11 +54,13 @@ pub fn run(conn: &Connection) -> anyhow::Result<()> {
             INSERT OR IGNORE INTO settings VALUES ('onboarding_done', 'false');
 
             INSERT INTO schema_version VALUES (1);
-        ")?;
+        ",
+        )?;
     }
 
     if version < 2 {
-        conn.execute_batch("
+        conn.execute_batch(
+            "
             INSERT OR IGNORE INTO settings VALUES ('audio_input_device',  'default');
             INSERT OR IGNORE INTO settings VALUES ('whisper_binary',       '');
             INSERT OR IGNORE INTO settings VALUES ('whisper_model',        '');
@@ -59,20 +68,24 @@ pub fn run(conn: &Connection) -> anyhow::Result<()> {
             INSERT OR IGNORE INTO settings VALUES ('voice_threshold_db',   '-30');
 
             INSERT INTO schema_version VALUES (2);
-        ")?;
+        ",
+        )?;
     }
 
     if version < 3 {
-        conn.execute_batch("
+        conn.execute_batch(
+            "
             INSERT OR IGNORE INTO settings VALUES ('voice_speed',           '1.0');
             INSERT OR IGNORE INTO settings VALUES ('voice_expressiveness',   '0.667');
 
             INSERT INTO schema_version VALUES (3);
-        ")?;
+        ",
+        )?;
     }
 
     if version < 4 {
-        conn.execute_batch("
+        conn.execute_batch(
+            "
             CREATE TABLE IF NOT EXISTS memories (
                 id          TEXT PRIMARY KEY,
                 session_id  TEXT,
@@ -86,26 +99,31 @@ pub fn run(conn: &Connection) -> anyhow::Result<()> {
             INSERT OR IGNORE INTO settings VALUES ('embedding_model', 'nomic-embed-text');
 
             INSERT INTO schema_version VALUES (4);
-        ")?;
+        ",
+        )?;
     }
 
     if version < 5 {
-        conn.execute_batch("
+        conn.execute_batch(
+            "
             ALTER TABLE memories ADD COLUMN source_file TEXT;
             CREATE INDEX IF NOT EXISTS idx_memories_source ON memories(source_file);
 
             INSERT OR IGNORE INTO settings VALUES ('custom_system_prompt', '');
 
             INSERT INTO schema_version VALUES (5);
-        ")?;
+        ",
+        )?;
     }
 
     if version < 6 {
-        conn.execute_batch("
+        conn.execute_batch(
+            "
             INSERT OR IGNORE INTO settings VALUES ('window_context_allowed', 'unset');
 
             INSERT INTO schema_version VALUES (6);
-        ")?;
+        ",
+        )?;
     }
 
     // Future migrations go here as `if version < N { ... }` blocks.

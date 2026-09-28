@@ -1,0 +1,13 @@
+{
+  "id": "b6711a91-e865-4497-998a-3381a87943ad",
+  "capability_id": "fake.read_document",
+  "project_id": "project-fixture",
+  "session_id": "session-fixture",
+  "arguments": { "path": "README.md" },
+  "objective": null,
+  "context_refs": [],
+  "grant_id": null,
+  "deadline_at": null,
+  "budget_micros": null,
+  "ancestry": []
+}

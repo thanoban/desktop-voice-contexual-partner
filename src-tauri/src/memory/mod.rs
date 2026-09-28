@@ -93,11 +93,7 @@ pub fn store_document_chunk(
 
 /// Returns top-k memories (both conversation and document) by cosine similarity.
 /// Scans last 200 entries (most recent) for performance.
-pub fn search_memories(
-    conn: &Connection,
-    query: &[f32],
-    top_k: usize,
-) -> Vec<MemoryResult> {
+pub fn search_memories(conn: &Connection, query: &[f32], top_k: usize) -> Vec<MemoryResult> {
     let mut stmt = match conn.prepare(
         "SELECT id, session_id, content, embedding, memory_type, created_at, source_file
          FROM memories ORDER BY created_at DESC LIMIT 200",
@@ -109,11 +105,11 @@ pub fn search_memories(
     let mut scored: Vec<MemoryResult> = stmt
         .query_map([], |row| {
             let mem = Memory {
-                id:          row.get(0)?,
-                session_id:  row.get(1)?,
-                content:     row.get(2)?,
+                id: row.get(0)?,
+                session_id: row.get(1)?,
+                content: row.get(2)?,
                 memory_type: row.get(4)?,
-                created_at:  row.get(5)?,
+                created_at: row.get(5)?,
                 source_file: row.get(6)?,
             };
             let blob: Vec<u8> = row.get(3)?;
@@ -128,7 +124,11 @@ pub fn search_memories(
         })
         .collect();
 
-    scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    scored.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     scored.truncate(top_k);
     scored
 }
@@ -144,11 +144,11 @@ pub fn list_memories(conn: &Connection) -> Vec<Memory> {
     };
     stmt.query_map([], |row| {
         Ok(Memory {
-            id:          row.get(0)?,
-            session_id:  row.get(1)?,
-            content:     row.get(2)?,
+            id: row.get(0)?,
+            session_id: row.get(1)?,
+            content: row.get(2)?,
             memory_type: row.get(3)?,
-            created_at:  row.get(4)?,
+            created_at: row.get(4)?,
             source_file: row.get(5)?,
         })
     })

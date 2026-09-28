@@ -1,0 +1,36 @@
+name: Verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy,rustfmt
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Validate contracts
+        shell: powershell
+        run: ./scripts/verify-contracts.ps1
+      - name: Build frontend
+        run: npm run build
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+      - name: Run Rust lints
+        run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+      - name: Run Rust tests
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml

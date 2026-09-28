@@ -9,6 +9,7 @@ use tauri::Emitter;
 ///   `sapi:<Name>`   → Windows System.Speech (SAPI)
 ///   `kokoro:<id>`   → Kokoro TTS via Python subprocess
 ///   anything else   → Piper TTS subprocess
+#[allow(clippy::too_many_arguments)]
 pub async fn speak(
     app: &AppHandle,
     piper_binary: &str,
@@ -23,7 +24,15 @@ pub async fn speak(
         return speak_sapi(app, sapi_name, text).await;
     }
     if let Some(kokoro_id) = voice.strip_prefix("kokoro:") {
-        return super::kokoro::speak_kokoro(app, kokoro_model, kokoro_voices, kokoro_id, text, speed).await;
+        return super::kokoro::speak_kokoro(
+            app,
+            kokoro_model,
+            kokoro_voices,
+            kokoro_id,
+            text,
+            speed,
+        )
+        .await;
     }
 
     let binary = resolve_binary(piper_binary)?;
@@ -33,7 +42,7 @@ pub async fn speak(
     let _ = app.emit("tts:start", ());
 
     let speed_str = format!("{:.3}", speed.clamp(0.3, 3.0));
-    let expr_str  = format!("{:.3}", expressiveness.clamp(0.0, 1.0));
+    let expr_str = format!("{:.3}", expressiveness.clamp(0.0, 1.0));
 
     let mut child = Command::new(&binary)
         .args([
@@ -107,7 +116,7 @@ async fn speak_sapi(app: &AppHandle, voice_name: &str, text: &str) -> Result<()>
 
     let safe_name = voice_name.replace('\'', "''");
     let safe_text = text.replace('\'', "''");
-    let wav_path  = out_file.to_str().unwrap_or("").to_string();
+    let wav_path = out_file.to_str().unwrap_or("").to_string();
 
     let script = format!(
         "Add-Type -AssemblyName System.Speech; \

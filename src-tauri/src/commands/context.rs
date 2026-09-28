@@ -42,19 +42,19 @@ pub fn start_sharing_context(
 
 /// Disables all context sharing and clears stored context.
 #[tauri::command]
-pub fn stop_sharing_context(
-    state: State<'_, AppState>,
-    app: AppHandle,
-) -> Result<(), String> {
+pub fn stop_sharing_context(state: State<'_, AppState>, app: AppHandle) -> Result<(), String> {
     {
         let mut ctx = state.context.lock().unwrap();
         *ctx = SharedContext::default();
     }
-    let _ = app.emit("context:update", ContextStatus {
-        sharing: false,
-        window_title: None,
-        custom_note: None,
-    });
+    let _ = app.emit(
+        "context:update",
+        ContextStatus {
+            sharing: false,
+            window_title: None,
+            custom_note: None,
+        },
+    );
     Ok(())
 }
 
@@ -81,4 +81,3 @@ pub fn set_context_note(
     let _ = app.emit("context:update", &status);
     Ok(status)
 }
-

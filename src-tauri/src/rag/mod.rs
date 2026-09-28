@@ -28,8 +28,7 @@ fn extract_plain(path: &Path) -> Result<String> {
 
 fn extract_pdf(path: &Path) -> Result<String> {
     let bytes = std::fs::read(path).map_err(|e| anyhow!("Cannot read PDF: {}", e))?;
-    pdf_extract::extract_text_from_mem(&bytes)
-        .map_err(|e| anyhow!("PDF extraction failed: {}", e))
+    pdf_extract::extract_text_from_mem(&bytes).map_err(|e| anyhow!("PDF extraction failed: {}", e))
 }
 
 fn extract_docx(path: &Path) -> Result<String> {

@@ -33,8 +33,7 @@ impl From<OllamaModel> for OllamaStatusModel {
 pub async fn get_ollama_status(state: State<'_, AppState>) -> Result<OllamaStatus, String> {
     let endpoint = {
         let conn = state.db.lock().map_err(|e| e.to_string())?;
-        db::get_setting(&conn, "endpoint")
-            .unwrap_or_else(|| "http://localhost:11434".into())
+        db::get_setting(&conn, "endpoint").unwrap_or_else(|| "http://localhost:11434".into())
     };
 
     match client::list_models(&endpoint).await {
@@ -55,8 +54,7 @@ pub async fn get_ollama_status(state: State<'_, AppState>) -> Result<OllamaStatu
 pub async fn list_models(state: State<'_, AppState>) -> Result<Vec<OllamaStatusModel>, String> {
     let endpoint = {
         let conn = state.db.lock().map_err(|e| e.to_string())?;
-        db::get_setting(&conn, "endpoint")
-            .unwrap_or_else(|| "http://localhost:11434".into())
+        db::get_setting(&conn, "endpoint").unwrap_or_else(|| "http://localhost:11434".into())
     };
     client::list_models(&endpoint)
         .await
@@ -75,7 +73,11 @@ pub fn expand_to_main(app: AppHandle) {
 /// Show a save-file dialog and write `content` to the chosen path.
 /// Returns silently if the user cancels.
 #[tauri::command]
-pub fn export_conversation(app: AppHandle, content: String, filename: String) -> Result<(), String> {
+pub fn export_conversation(
+    app: AppHandle,
+    content: String,
+    filename: String,
+) -> Result<(), String> {
     let result = app
         .dialog()
         .file()

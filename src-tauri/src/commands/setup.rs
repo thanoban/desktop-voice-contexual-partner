@@ -106,7 +106,7 @@ pub fn check_setup(app: AppHandle, state: State<'_, AppState>) -> SetupStatus {
     let t = tools_dir(&app);
     let auto_piper = t.join("piper").join("piper.exe");
     let voices_base = t.join("piper").join("voices");
-    let auto_model  = t.join("whisper").join("ggml-base.en.bin");
+    let auto_model = t.join("whisper").join("ggml-base.en.bin");
 
     let (cfg_piper, cfg_voice, cfg_model) = {
         let conn = state.db.lock().unwrap();
@@ -129,21 +129,23 @@ pub fn check_setup(app: AppHandle, state: State<'_, AppState>) -> SetupStatus {
     if !cfg_voice.is_empty() {
         for vid in KNOWN_VOICE_IDS {
             if cfg_voice.contains(vid) && PathBuf::from(&cfg_voice).exists() {
-                voice_paths.entry(vid.to_string()).or_insert_with(|| cfg_voice.clone());
+                voice_paths
+                    .entry(vid.to_string())
+                    .or_insert_with(|| cfg_voice.clone());
             }
         }
     }
 
-    let piper_ok = auto_piper.exists()
-        || (!cfg_piper.is_empty() && PathBuf::from(&cfg_piper).exists());
-    let voice_ok = !voice_paths.is_empty()
-        || (!cfg_voice.is_empty() && PathBuf::from(&cfg_voice).exists());
-    let model_ok = auto_model.exists()
-        || (!cfg_model.is_empty() && PathBuf::from(&cfg_model).exists());
+    let piper_ok =
+        auto_piper.exists() || (!cfg_piper.is_empty() && PathBuf::from(&cfg_piper).exists());
+    let voice_ok =
+        !voice_paths.is_empty() || (!cfg_voice.is_empty() && PathBuf::from(&cfg_voice).exists());
+    let model_ok =
+        auto_model.exists() || (!cfg_model.is_empty() && PathBuf::from(&cfg_model).exists());
 
     // ── Kokoro ────────────────────────────────────────────────────────────────
     let kokoro_dir_path = kokoro_dir(&app);
-    let auto_kok_model  = kokoro_dir_path.join("kokoro-v1.0.onnx");
+    let auto_kok_model = kokoro_dir_path.join("kokoro-v1.0.onnx");
     let auto_kok_voices = kokoro_dir_path.join("voices.bin");
 
     let (cfg_kok_model, cfg_kok_voices) = {
@@ -165,7 +167,7 @@ pub fn check_setup(app: AppHandle, state: State<'_, AppState>) -> SetupStatus {
         cfg_kok_voices.clone()
     };
 
-    let kok_model_ok  = PathBuf::from(&kok_model_path).exists();
+    let kok_model_ok = PathBuf::from(&kok_model_path).exists();
     let kok_voices_ok = PathBuf::from(&kok_voices_path).exists();
 
     let (python_ok, kokoro_lib_ok) = crate::tts::kokoro::check_kokoro_available();
@@ -185,11 +187,11 @@ pub fn check_setup(app: AppHandle, state: State<'_, AppState>) -> SetupStatus {
             cfg_model
         },
         voice_paths,
-        kokoro_model_ok:  kok_model_ok,
+        kokoro_model_ok: kok_model_ok,
         kokoro_voices_ok: kok_voices_ok,
         python_ok,
         kokoro_lib_ok,
-        kokoro_model_path:  kok_model_path,
+        kokoro_model_path: kok_model_path,
         kokoro_voices_path: kok_voices_path,
     }
 }
@@ -203,12 +205,10 @@ pub fn pick_file(app: AppHandle, filters: Vec<String>) -> Option<String> {
     if !refs.is_empty() {
         picker = picker.add_filter("Files", &refs);
     }
-    picker
-        .blocking_pick_file()
-        .and_then(|fp| match fp {
-            tauri_plugin_dialog::FilePath::Path(p) => Some(p.to_string_lossy().to_string()),
-            _ => None,
-        })
+    picker.blocking_pick_file().and_then(|fp| match fp {
+        tauri_plugin_dialog::FilePath::Path(p) => Some(p.to_string_lossy().to_string()),
+        _ => None,
+    })
 }
 
 // ── Download ──────────────────────────────────────────────────────────────────
@@ -227,16 +227,61 @@ pub async fn download_tool(
     tool: String,
 ) -> Result<String, String> {
     let result = match tool.as_str() {
-        "piper_windows"         => dl_piper_windows(&app, &state).await,
-        "piper_voice_amy"       => dl_piper_voice_amy(&app, &state).await,
-        "piper_voice_lessac"    => dl_piper_voice_file(&app, "piper_voice_lessac", "en_US-lessac-medium", PIPER_VOICE_LESSAC_ONNX, PIPER_VOICE_LESSAC_JSON).await,
-        "piper_voice_ryan"      => dl_piper_voice_file(&app, "piper_voice_ryan",   "en_US-ryan-medium",   PIPER_VOICE_RYAN_ONNX,   PIPER_VOICE_RYAN_JSON).await,
-        "piper_voice_alan"        => dl_piper_voice_file(&app, "piper_voice_alan",        "en_GB-alan-medium",      PIPER_VOICE_ALAN_ONNX,        PIPER_VOICE_ALAN_JSON).await,
-        "piper_voice_priyamvada"  => dl_piper_voice_file(&app, "piper_voice_priyamvada",  "hi_IN-priyamvada-medium", PIPER_VOICE_PRIYAMVADA_ONNX,  PIPER_VOICE_PRIYAMVADA_JSON).await,
-        "piper_voice_pratham"     => dl_piper_voice_file(&app, "piper_voice_pratham",     "hi_IN-pratham-medium",    PIPER_VOICE_PRATHAM_ONNX,     PIPER_VOICE_PRATHAM_JSON).await,
-        "whisper_model_base_en"   => dl_whisper_model(&app, &state).await,
-        "kokoro_model"            => dl_kokoro_model(&app, &state).await,
-        "kokoro_voices"           => dl_kokoro_voices(&app, &state).await,
+        "piper_windows" => dl_piper_windows(&app, &state).await,
+        "piper_voice_amy" => dl_piper_voice_amy(&app, &state).await,
+        "piper_voice_lessac" => {
+            dl_piper_voice_file(
+                &app,
+                "piper_voice_lessac",
+                "en_US-lessac-medium",
+                PIPER_VOICE_LESSAC_ONNX,
+                PIPER_VOICE_LESSAC_JSON,
+            )
+            .await
+        }
+        "piper_voice_ryan" => {
+            dl_piper_voice_file(
+                &app,
+                "piper_voice_ryan",
+                "en_US-ryan-medium",
+                PIPER_VOICE_RYAN_ONNX,
+                PIPER_VOICE_RYAN_JSON,
+            )
+            .await
+        }
+        "piper_voice_alan" => {
+            dl_piper_voice_file(
+                &app,
+                "piper_voice_alan",
+                "en_GB-alan-medium",
+                PIPER_VOICE_ALAN_ONNX,
+                PIPER_VOICE_ALAN_JSON,
+            )
+            .await
+        }
+        "piper_voice_priyamvada" => {
+            dl_piper_voice_file(
+                &app,
+                "piper_voice_priyamvada",
+                "hi_IN-priyamvada-medium",
+                PIPER_VOICE_PRIYAMVADA_ONNX,
+                PIPER_VOICE_PRIYAMVADA_JSON,
+            )
+            .await
+        }
+        "piper_voice_pratham" => {
+            dl_piper_voice_file(
+                &app,
+                "piper_voice_pratham",
+                "hi_IN-pratham-medium",
+                PIPER_VOICE_PRATHAM_ONNX,
+                PIPER_VOICE_PRATHAM_JSON,
+            )
+            .await
+        }
+        "whisper_model_base_en" => dl_whisper_model(&app, &state).await,
+        "kokoro_model" => dl_kokoro_model(&app, &state).await,
+        "kokoro_voices" => dl_kokoro_voices(&app, &state).await,
         other => Err(format!("Unknown tool: {other}")),
     };
     if let Err(ref e) = result {
@@ -281,7 +326,11 @@ async fn fetch_with_progress(
         downloaded += bytes.len() as u64;
         let _ = app.emit(
             "download:progress",
-            DownloadProgress { tool: tool.to_string(), downloaded, total },
+            DownloadProgress {
+                tool: tool.to_string(),
+                downloaded,
+                total,
+            },
         );
     }
 
@@ -308,19 +357,19 @@ async fn dl_piper_voice_file(
         .map_err(|e| e.to_string())?;
 
     let path_str = onnx.to_string_lossy().to_string();
-    let _ = app.emit("download:done", DownloadDone {
-        tool: tool_id.to_string(),
-        path: path_str.clone(),
-    });
+    let _ = app.emit(
+        "download:done",
+        DownloadDone {
+            tool: tool_id.to_string(),
+            path: path_str.clone(),
+        },
+    );
     Ok(path_str)
 }
 
 // ── Per-tool downloaders ──────────────────────────────────────────────────────
 
-async fn dl_piper_windows(
-    app: &AppHandle,
-    state: &State<'_, AppState>,
-) -> Result<String, String> {
+async fn dl_piper_windows(app: &AppHandle, state: &State<'_, AppState>) -> Result<String, String> {
     let zip_path = tools_dir(app).join("piper_win.zip");
     fetch_with_progress(app, "piper_windows", PIPER_WIN_URL, &zip_path).await?;
 
@@ -354,10 +403,13 @@ async fn dl_piper_windows(
         let _ = db::set_setting(&conn, "piper_binary", &exe_path);
     }
 
-    let _ = app.emit("download:done", DownloadDone {
-        tool: "piper_windows".into(),
-        path: exe_path.clone(),
-    });
+    let _ = app.emit(
+        "download:done",
+        DownloadDone {
+            tool: "piper_windows".into(),
+            path: exe_path.clone(),
+        },
+    );
     Ok(exe_path)
 }
 
@@ -367,18 +419,19 @@ async fn dl_piper_voice_amy(
     state: &State<'_, AppState>,
 ) -> Result<String, String> {
     let path = dl_piper_voice_file(
-        app, "piper_voice_amy", "en_US-amy-medium",
-        PIPER_VOICE_AMY_ONNX, PIPER_VOICE_AMY_JSON,
-    ).await?;
+        app,
+        "piper_voice_amy",
+        "en_US-amy-medium",
+        PIPER_VOICE_AMY_ONNX,
+        PIPER_VOICE_AMY_JSON,
+    )
+    .await?;
     let conn = state.db.lock().unwrap();
     let _ = db::set_setting(&conn, "piper_voice", &path);
     Ok(path)
 }
 
-async fn dl_whisper_model(
-    app: &AppHandle,
-    state: &State<'_, AppState>,
-) -> Result<String, String> {
+async fn dl_whisper_model(app: &AppHandle, state: &State<'_, AppState>) -> Result<String, String> {
     let dest = tools_dir(app).join("whisper").join("ggml-base.en.bin");
     fetch_with_progress(app, "whisper_model_base_en", WHISPER_MODEL_URL, &dest).await?;
 
@@ -388,17 +441,17 @@ async fn dl_whisper_model(
         let _ = db::set_setting(&conn, "whisper_model", &path_str);
     }
 
-    let _ = app.emit("download:done", DownloadDone {
-        tool: "whisper_model_base_en".into(),
-        path: path_str.clone(),
-    });
+    let _ = app.emit(
+        "download:done",
+        DownloadDone {
+            tool: "whisper_model_base_en".into(),
+            path: path_str.clone(),
+        },
+    );
     Ok(path_str)
 }
 
-async fn dl_kokoro_model(
-    app: &AppHandle,
-    state: &State<'_, AppState>,
-) -> Result<String, String> {
+async fn dl_kokoro_model(app: &AppHandle, state: &State<'_, AppState>) -> Result<String, String> {
     let dest = kokoro_dir(app).join("kokoro-v1.0.onnx");
     fetch_with_progress(app, "kokoro_model", KOKORO_MODEL_URL, &dest).await?;
 
@@ -407,17 +460,17 @@ async fn dl_kokoro_model(
         let conn = state.db.lock().unwrap();
         let _ = db::set_setting(&conn, "kokoro_model", &path_str);
     }
-    let _ = app.emit("download:done", DownloadDone {
-        tool: "kokoro_model".into(),
-        path: path_str.clone(),
-    });
+    let _ = app.emit(
+        "download:done",
+        DownloadDone {
+            tool: "kokoro_model".into(),
+            path: path_str.clone(),
+        },
+    );
     Ok(path_str)
 }
 
-async fn dl_kokoro_voices(
-    app: &AppHandle,
-    state: &State<'_, AppState>,
-) -> Result<String, String> {
+async fn dl_kokoro_voices(app: &AppHandle, state: &State<'_, AppState>) -> Result<String, String> {
     let dest = kokoro_dir(app).join("voices.bin");
     fetch_with_progress(app, "kokoro_voices", KOKORO_VOICES_URL, &dest).await?;
 
@@ -426,9 +479,12 @@ async fn dl_kokoro_voices(
         let conn = state.db.lock().unwrap();
         let _ = db::set_setting(&conn, "kokoro_voices", &path_str);
     }
-    let _ = app.emit("download:done", DownloadDone {
-        tool: "kokoro_voices".into(),
-        path: path_str.clone(),
-    });
+    let _ = app.emit(
+        "download:done",
+        DownloadDone {
+            tool: "kokoro_voices".into(),
+            path: path_str.clone(),
+        },
+    );
     Ok(path_str)
 }

@@ -15,20 +15,22 @@ mod audio;
 mod commands;
 mod context;
 mod db;
+pub mod domain;
 mod embed;
 mod llm;
 mod memory;
 mod rag;
 mod safety;
 mod summarize;
+pub mod telemetry;
 mod tts;
 
+use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
-use std::path::PathBuf;
-use tauri::{AppHandle, Emitter, Manager};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 // ── App state ─────────────────────────────────────────────────────────────────
@@ -113,8 +115,8 @@ pub fn run() {
 
             tracing::info!("Opening database at {:?}", db_path);
 
-            let conn = rusqlite::Connection::open(&db_path)
-                .expect("Failed to open SQLite database");
+            let conn =
+                rusqlite::Connection::open(&db_path).expect("Failed to open SQLite database");
 
             db::migrations::run(&conn).expect("Database migration failed");
 
@@ -146,11 +148,14 @@ pub fn run() {
                 .cloned()
                 .unwrap_or_else(|| tauri::image::Image::new_owned(vec![0, 0, 0, 0], 1, 1));
 
-            let widget_item = MenuItem::with_id(app, "widget", "Show / Hide Widget",  true, None::<&str>)?;
-            let main_item   = MenuItem::with_id(app, "main",   "Open VoicePartner",   true, None::<&str>)?;
-            let sep         = PredefinedMenuItem::separator(app)?;
-            let quit_item   = MenuItem::with_id(app, "quit",   "Quit VoicePartner",   true, None::<&str>)?;
-            let menu        = Menu::with_items(app, &[&widget_item, &main_item, &sep, &quit_item])?;
+            let widget_item =
+                MenuItem::with_id(app, "widget", "Show / Hide Widget", true, None::<&str>)?;
+            let main_item =
+                MenuItem::with_id(app, "main", "Open VoicePartner", true, None::<&str>)?;
+            let sep = PredefinedMenuItem::separator(app)?;
+            let quit_item =
+                MenuItem::with_id(app, "quit", "Quit VoicePartner", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&widget_item, &main_item, &sep, &quit_item])?;
 
             let _tray = TrayIconBuilder::new()
                 .icon(tray_icon)
@@ -168,9 +173,9 @@ pub fn run() {
                 })
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "widget" => toggle_named_window(app, "widget"),
-                    "main"   => toggle_window(app),
-                    "quit"   => app.exit(0),
-                    _        => {}
+                    "main" => toggle_window(app),
+                    "quit" => app.exit(0),
+                    _ => {}
                 })
                 .build(app)?;
 
@@ -187,12 +192,13 @@ pub fn run() {
 
             // ── Global PTT shortcut: Alt+Space ────────────────────────────────
             let ptt = Shortcut::new(Some(Modifiers::ALT), Code::Space);
-            app.global_shortcut().on_shortcut(ptt, |app_handle, _shortcut, event| {
-                if event.state == ShortcutState::Pressed {
-                    show_window(app_handle);
-                    let _ = app_handle.emit("shortcut:ptt:toggle", ());
-                }
-            })?;
+            app.global_shortcut()
+                .on_shortcut(ptt, |app_handle, _shortcut, event| {
+                    if event.state == ShortcutState::Pressed {
+                        show_window(app_handle);
+                        let _ = app_handle.emit("shortcut:ptt:toggle", ());
+                    }
+                })?;
 
             Ok(())
         })

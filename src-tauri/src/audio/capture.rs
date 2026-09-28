@@ -1,8 +1,8 @@
 use anyhow::{anyhow, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 const TARGET_SAMPLE_RATE: u32 = 16_000; // whisper.cpp expects 16 kHz
@@ -10,20 +10,14 @@ const TARGET_SAMPLE_RATE: u32 = 16_000; // whisper.cpp expects 16 kHz
 pub fn list_input_devices() -> Vec<String> {
     let host = cpal::default_host();
     host.input_devices()
-        .map(|iter| {
-            iter.filter_map(|d| d.name().ok())
-                .collect()
-        })
+        .map(|iter| iter.filter_map(|d| d.name().ok()).collect())
         .unwrap_or_default()
 }
 
 /// Start recording from the default (or named) input device.
 /// Returns (stop_flag, wav_path). The recording runs on a background thread
 /// until stop_flag is set to true.
-pub fn start_recording(
-    device_name: &str,
-    wav_path: PathBuf,
-) -> Result<Arc<AtomicBool>> {
+pub fn start_recording(device_name: &str, wav_path: PathBuf) -> Result<Arc<AtomicBool>> {
     let host = cpal::default_host();
 
     let device = if device_name.is_empty() || device_name == "default" {
