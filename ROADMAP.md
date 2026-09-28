@@ -22,6 +22,7 @@ The plan was published at `bc734ce` on `main`, with earlier local documents pres
 | Generation cancellation | unit-tested | Text and voice controls signal the active request; HTTP request/stream cancellation finalizes retained partial output |
 | Playback cancellation | planned | UI no longer claims subprocess playback stopped; native playback ownership remains required |
 | Partner modes | implemented | Company, Work and Focus are persisted preferences and alter backend conversation behavior |
+| Schema v7 project boundary | unit-tested | Legacy sessions and memories migrate to the explicit Personal scope; new sessions record project and mode |
 | Live voice, provider, integration and installed-device behavior | planned | Requires the later stage gates below |
 
 ## Stage gates

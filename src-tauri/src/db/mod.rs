@@ -2,6 +2,8 @@ pub mod migrations;
 
 use rusqlite::{Connection, Result};
 
+pub const DEFAULT_PROJECT_ID: &str = "personal";
+
 pub fn get_setting(conn: &Connection, key: &str) -> Option<String> {
     conn.query_row(
         "SELECT value FROM settings WHERE key = ?1",
@@ -31,10 +33,11 @@ pub fn get_all_settings(conn: &Connection) -> Vec<(String, String)> {
 
 pub fn ensure_session(conn: &Connection) -> Result<String> {
     let cutoff = now_ms() - (4 * 60 * 60 * 1000); // reuse session within 4h
+    let (project_id, partner_mode) = current_scope(conn);
     let existing: Result<String> = conn.query_row(
-        "SELECT id FROM sessions WHERE started_at > ?1 AND ended_at IS NULL \
+        "SELECT id FROM sessions WHERE started_at > ?1 AND ended_at IS NULL AND project_id = ?2 \
          ORDER BY started_at DESC LIMIT 1",
-        rusqlite::params![cutoff],
+        rusqlite::params![cutoff, project_id],
         |row| row.get(0),
     );
     match existing {
@@ -42,8 +45,8 @@ pub fn ensure_session(conn: &Connection) -> Result<String> {
         Err(_) => {
             let id = uuid::Uuid::new_v4().to_string();
             conn.execute(
-                "INSERT INTO sessions (id, started_at) VALUES (?1, ?2)",
-                rusqlite::params![id, now_ms()],
+                "INSERT INTO sessions (id, started_at, project_id, partner_mode) VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params![id, now_ms(), project_id, partner_mode],
             )?;
             Ok(id)
         }
@@ -53,14 +56,15 @@ pub fn ensure_session(conn: &Connection) -> Result<String> {
 pub fn create_session(conn: &Connection) -> Result<String> {
     let timestamp = now_ms();
     let id = uuid::Uuid::new_v4().to_string();
+    let (project_id, partner_mode) = current_scope(conn);
     let transaction = conn.unchecked_transaction()?;
     transaction.execute(
-        "UPDATE sessions SET ended_at = ?1 WHERE ended_at IS NULL",
-        rusqlite::params![timestamp],
+        "UPDATE sessions SET ended_at = ?1 WHERE ended_at IS NULL AND project_id = ?2",
+        rusqlite::params![timestamp, project_id],
     )?;
     transaction.execute(
-        "INSERT INTO sessions (id, started_at) VALUES (?1, ?2)",
-        rusqlite::params![id, timestamp],
+        "INSERT INTO sessions (id, started_at, project_id, partner_mode) VALUES (?1, ?2, ?3, ?4)",
+        rusqlite::params![id, timestamp, project_id, partner_mode],
     )?;
     transaction.commit()?;
     Ok(id)
@@ -76,12 +80,36 @@ pub fn close_session(conn: &Connection, session_id: &str) -> Result<()> {
 }
 
 pub fn save_turn(conn: &Connection, session_id: &str, role: &str, content: &str) -> Result<()> {
+    save_turn_with_state(conn, session_id, role, content, "text", "completed")
+}
+
+pub fn save_turn_with_state(
+    conn: &Connection,
+    session_id: &str,
+    role: &str,
+    content: &str,
+    input_kind: &str,
+    state: &str,
+) -> Result<()> {
     let id = uuid::Uuid::new_v4().to_string();
+    let timestamp = now_ms();
     conn.execute(
-        "INSERT INTO turns (id, session_id, role, content, created_at) VALUES (?1,?2,?3,?4,?5)",
-        rusqlite::params![id, session_id, role, content, now_ms()],
+        "INSERT INTO turns (id, session_id, role, content, created_at, input_kind, state, completed_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        rusqlite::params![id, session_id, role, content, timestamp, input_kind, state, timestamp],
     )?;
     Ok(())
+}
+
+pub fn selected_project_id(conn: &Connection) -> String {
+    get_setting(conn, "selected_project_id").unwrap_or_else(|| DEFAULT_PROJECT_ID.into())
+}
+
+fn current_scope(conn: &Connection) -> (String, String) {
+    (
+        selected_project_id(conn),
+        get_setting(conn, "partner_mode").unwrap_or_else(|| "company".into()),
+    )
 }
 
 pub fn get_turn_count(conn: &Connection, session_id: &str) -> rusqlite::Result<i64> {
@@ -119,6 +147,8 @@ pub struct SessionSummary {
     pub ended_at: Option<i64>,
     pub turn_count: i64,
     pub first_user_message: Option<String>,
+    pub project_id: String,
+    pub partner_mode: String,
 }
 
 pub fn list_sessions(conn: &Connection) -> Vec<SessionSummary> {
@@ -126,6 +156,7 @@ pub fn list_sessions(conn: &Connection) -> Vec<SessionSummary> {
         .prepare(
             "SELECT s.id, s.started_at, s.ended_at, COUNT(t.id) as turn_count, \
              MIN(CASE WHEN t.role='user' THEN t.content END) as first_msg \
+             , s.project_id, s.partner_mode \
              FROM sessions s \
              LEFT JOIN turns t ON t.session_id = s.id \
              GROUP BY s.id \
@@ -140,6 +171,8 @@ pub fn list_sessions(conn: &Connection) -> Vec<SessionSummary> {
             ended_at: row.get(2)?,
             turn_count: row.get(3)?,
             first_user_message: row.get(4)?,
+            project_id: row.get(5)?,
+            partner_mode: row.get(6)?,
         })
     })
     .unwrap()

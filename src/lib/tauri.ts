@@ -298,6 +298,8 @@ export interface SessionInfo {
   ended_at: number | null;
   turn_count: number;
   preview: string;
+  project_id: string;
+  partner_mode: "company" | "work" | "focus";
 }
 
 export interface TurnInfo {

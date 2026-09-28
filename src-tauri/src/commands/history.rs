@@ -10,6 +10,8 @@ pub struct SessionInfo {
     pub ended_at: Option<i64>,
     pub turn_count: i64,
     pub preview: String,
+    pub project_id: String,
+    pub partner_mode: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -30,6 +32,8 @@ pub fn list_sessions(state: State<'_, AppState>) -> Result<Vec<SessionInfo>, Str
             started_at: s.started_at,
             ended_at: s.ended_at,
             turn_count: s.turn_count,
+            project_id: s.project_id,
+            partner_mode: s.partner_mode,
             preview: s
                 .first_user_message
                 .unwrap_or_default()
