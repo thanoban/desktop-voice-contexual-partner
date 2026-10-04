@@ -1,5 +1,4 @@
 use anyhow::{anyhow, Result};
-use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use tauri::AppHandle;
@@ -38,13 +37,15 @@ pub async fn speak(
     let binary = resolve_binary(piper_binary)?;
     let voice_path = resolve_voice(voice)?;
     let out_file = super::temp_wav_path();
+    let epoch = super::playback::global().epoch();
 
     let _ = app.emit("tts:start", ());
 
     let speed_str = format!("{:.3}", speed.clamp(0.3, 3.0));
     let expr_str = format!("{:.3}", expressiveness.clamp(0.0, 1.0));
 
-    let mut child = Command::new(&binary)
+    let mut command = Command::new(&binary);
+    command
         .args([
             "--model",
             voice_path.to_str().unwrap_or(voice),
@@ -55,25 +56,29 @@ pub async fn speak(
             "--noise-scale",
             &expr_str,
         ])
-        .stdin(Stdio::piped())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|e| anyhow!("Failed to spawn piper: {}", e))?;
+        .stderr(Stdio::null());
 
-    if let Some(stdin) = child.stdin.take() {
-        let mut s = stdin;
-        let _ = s.write_all(text.as_bytes());
-    }
+    let synthesized = super::run_synthesis(command, Some(text.as_bytes()), epoch)?;
+    finish(app, &out_file, synthesized.is_some(), epoch)
+}
 
-    child
-        .wait()
-        .map_err(|e| anyhow!("Piper wait failed: {}", e))?;
-
-    super::play_wav(&out_file)?;
-    let _ = std::fs::remove_file(&out_file);
+/// Plays the synthesized file unless speech was cancelled, then always cleans up and
+/// announces the end of speech.
+pub(crate) fn finish(
+    app: &AppHandle,
+    out_file: &std::path::Path,
+    synthesized: bool,
+    epoch: u64,
+) -> Result<()> {
+    let result = if synthesized {
+        super::play_wav(out_file, epoch).map(|_| ())
+    } else {
+        Ok(())
+    };
+    let _ = std::fs::remove_file(out_file);
     let _ = app.emit("tts:end", ());
-    Ok(())
+    result
 }
 
 /// Returns the names of all installed Windows SAPI voices.
@@ -111,6 +116,7 @@ pub fn get_sapi_voices() -> Vec<String> {
 
 #[cfg(target_os = "windows")]
 async fn speak_sapi(app: &AppHandle, voice_name: &str, text: &str) -> Result<()> {
+    let epoch = super::playback::global().epoch();
     let _ = app.emit("tts:start", ());
     let out_file = super::temp_wav_path();
 
@@ -127,15 +133,10 @@ async fn speak_sapi(app: &AppHandle, voice_name: &str, text: &str) -> Result<()>
          $s.SetOutputToDefaultAudioDevice()"
     );
 
-    Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
-        .status()
-        .map_err(|e| anyhow!("SAPI speak failed: {}", e))?;
-
-    super::play_wav(&out_file)?;
-    let _ = std::fs::remove_file(&out_file);
-    let _ = app.emit("tts:end", ());
-    Ok(())
+    let mut command = Command::new("powershell");
+    command.args(["-NoProfile", "-NonInteractive", "-Command", &script]);
+    let synthesized = super::run_synthesis(command, None, epoch)?;
+    finish(app, &out_file, synthesized.is_some(), epoch)
 }
 
 #[cfg(not(target_os = "windows"))]

@@ -37,6 +37,7 @@ pub async fn speak_kokoro(
         ));
     }
 
+    let epoch = super::playback::global().epoch();
     let _ = app.emit("tts:start", ());
     let out_file = super::temp_wav_path();
     let speed_str = format!("{:.2}", speed.clamp(0.5, 2.0));
@@ -55,30 +56,25 @@ pub async fn speak_kokoro(
     ];
     args.extend_from_slice(&words);
 
-    let status = tokio::task::spawn_blocking({
-        let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-        move || Command::new("python").args(&args).status()
-    })
-    .await
-    .map_err(|e| anyhow!("Kokoro task panicked: {}", e))?
-    .map_err(|e| {
+    let mut command = Command::new("python");
+    command.args(&args);
+    let status = super::run_synthesis(command, None, epoch).map_err(|e| {
         anyhow!(
-            "Failed to launch Python for Kokoro TTS: {}. \
-             Make sure Python is installed and on PATH.",
+            "Failed to launch Python for Kokoro TTS: {}.              Make sure Python is installed and on PATH.",
             e
         )
     })?;
 
-    if !status.success() {
-        return Err(anyhow!(
-            "Kokoro TTS failed. Ensure kokoro-onnx is installed: pip install kokoro-onnx"
-        ));
+    if let Some(status) = &status {
+        if !status.success() {
+            let _ = std::fs::remove_file(&out_file);
+            let _ = app.emit("tts:end", ());
+            return Err(anyhow!(
+                "Kokoro TTS failed. Ensure kokoro-onnx is installed: pip install kokoro-onnx"
+            ));
+        }
     }
-
-    super::play_wav(&out_file)?;
-    let _ = std::fs::remove_file(&out_file);
-    let _ = app.emit("tts:end", ());
-    Ok(())
+    super::piper::finish(app, &out_file, status.is_some(), epoch)
 }
 
 /// Check whether Python and kokoro_onnx are available on this system.

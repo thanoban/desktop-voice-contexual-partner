@@ -95,7 +95,7 @@ export const getSapiVoices = (): Promise<string[]> =>
 
 export interface CancellationResponse {
   generation: "requested" | "no_active_turn";
-  playback: "unsupported";
+  playback: "stopped" | "idle";
 }
 
 export interface ConversationSnapshot {

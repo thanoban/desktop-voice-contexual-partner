@@ -489,14 +489,14 @@ pub fn start_new_session(state: State<'_, AppState>) -> Result<String, String> {
 #[derive(Debug, Serialize)]
 pub struct CancellationResponse {
     pub generation: crate::conversation::controller::CancelRequestStatus,
-    pub playback: &'static str,
+    pub playback: crate::tts::playback::StopOutcome,
 }
 
 #[tauri::command]
 pub fn stop_speaking(state: State<'_, AppState>) -> CancellationResponse {
     CancellationResponse {
         generation: state.conversation.cancel_active(),
-        playback: "unsupported",
+        playback: crate::tts::playback::global().stop(),
     }
 }
 

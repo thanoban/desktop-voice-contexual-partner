@@ -20,7 +20,7 @@ The plan was published at `bc734ce` on `main`, with earlier local documents pres
 | Typed text fallback | implemented | Keyboard-accessible composer supports Enter to send and Shift+Enter for multiline drafts |
 | Foreground turn ownership | unit-tested | One backend controller owns the active turn across windows and rejects overlapping generation |
 | Generation cancellation | unit-tested | Text and voice controls signal the active request; HTTP request/stream cancellation finalizes retained partial output |
-| Playback cancellation | planned | UI no longer claims subprocess playback stopped; native playback ownership remains required |
+| Playback cancellation | unit-tested | Piper, Kokoro and SAPI synthesis and playback run as tracked subprocesses under a cancel epoch; `stop_speaking` kills the live process and reports `stopped` or `idle`; cancelled work never spawns the next stage. 30 Rust tests pass. Not yet live-qualified on audio hardware; in-process native playback (queue, consumed offsets) remains S2 |
 | Partner modes | implemented | Company, Work and Focus are persisted preferences and alter backend conversation behavior |
 | Schema v7 project boundary | unit-tested | Legacy sessions and memories migrate to the explicit Personal scope; new sessions record project and mode |
 | Project-scoped retrieval, history and workspace switching | unit-tested | Memories, documents, sessions and turns filter by selected project; stale-workspace requests are rejected; switching opens a fresh session; 26 Rust tests pass. Indexed/relevance-bounded retrieval (replacing the 200-entry scan) remains planned |
