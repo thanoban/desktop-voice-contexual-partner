@@ -15,6 +15,7 @@ export interface Settings {
   companion_name: string;
   personality: "gentle" | "playful" | "calm" | "energetic" | "mentor" | "caring";
   partner_mode: "company" | "work" | "focus";
+  selected_project_id: string;
   piper_binary: string;
   piper_voice: string;
   onboarding_done: string;
@@ -54,16 +55,35 @@ export const getSettings = (): Promise<Settings> =>
 export const updateSetting = (key: string, value: string): Promise<void> =>
   invoke("update_setting", { key, value });
 
+export interface ProjectInfo {
+  id: string;
+  name: string;
+  kind: "personal" | "client" | "project";
+}
+
+export interface ProjectSelection {
+  project_id: string;
+  session_id: string;
+}
+
+export const listProjects = (): Promise<ProjectInfo[]> => invoke("list_projects");
+export const createProject = (name: string, kind: "client" | "project"): Promise<ProjectInfo> =>
+  invoke("create_project", { name, kind });
+export const selectProject = (projectId: string): Promise<ProjectSelection> =>
+  invoke("select_project", { projectId });
+export const onProjectSelected = (cb: (selection: ProjectSelection) => void): Promise<UnlistenFn> =>
+  listen<ProjectSelection>("project:selected", (event) => cb(event.payload));
+
 // ── Chat commands ────────────────────────────────────────────────────────────
 
-export const sendMessage = (content: string): Promise<void> =>
-  invoke("send_message", { content });
+export const sendMessage = (content: string, projectId: string): Promise<void> =>
+  invoke("send_message", { content, projectId });
 
 export const startNewSession = (): Promise<string> =>
   invoke("start_new_session");
 
-export const getGreeting = (): Promise<void> =>
-  invoke("get_greeting");
+export const getGreeting = (projectId: string): Promise<void> =>
+  invoke("get_greeting", { projectId });
 
 // ── TTS commands ─────────────────────────────────────────────────────────────
 
@@ -128,17 +148,23 @@ export const setContextNote = (note: string): Promise<ContextStatus> =>
 
 // ── Event listeners ──────────────────────────────────────────────────────────
 
-export const onChatToken = (cb: (token: string) => void): Promise<UnlistenFn> =>
-  listen<string>("chat:token", (e) => cb(e.payload));
+interface ProjectEvent<T> { project_id: string; payload: T }
+const listenProject = <T,>(name: string, projectId: string, cb: (payload: T) => void): Promise<UnlistenFn> =>
+  listen<ProjectEvent<T>>(name, (event) => {
+    if (event.payload.project_id === projectId) cb(event.payload.payload);
+  });
 
-export const onChatDone = (cb: () => void): Promise<UnlistenFn> =>
-  listen("chat:done", () => cb());
+export const onChatToken = (projectId: string, cb: (token: string) => void): Promise<UnlistenFn> =>
+  listenProject<string>("chat:token", projectId, cb);
 
-export const onChatError = (cb: (msg: string) => void): Promise<UnlistenFn> =>
-  listen<string>("chat:error", (e) => cb(e.payload));
+export const onChatDone = (projectId: string, cb: () => void): Promise<UnlistenFn> =>
+  listenProject("chat:done", projectId, cb);
 
-export const onChatCancelled = (cb: (turnId: string) => void): Promise<UnlistenFn> =>
-  listen<string>("chat:cancelled", (e) => cb(e.payload));
+export const onChatError = (projectId: string, cb: (msg: string) => void): Promise<UnlistenFn> =>
+  listenProject<string>("chat:error", projectId, cb);
+
+export const onChatCancelled = (projectId: string, cb: (turnId: string) => void): Promise<UnlistenFn> =>
+  listenProject<string>("chat:cancelled", projectId, cb);
 
 export const onSpeakStart = (cb: () => void): Promise<UnlistenFn> =>
   listen("tts:start", () => cb());
@@ -164,8 +190,8 @@ export const onAudioError = (cb: (msg: string) => void): Promise<UnlistenFn> =>
 export const onContextUpdate = (cb: (status: ContextStatus) => void): Promise<UnlistenFn> =>
   listen<ContextStatus>("context:update", (e) => cb(e.payload));
 
-export const onSafetyShow = (cb: () => void): Promise<UnlistenFn> =>
-  listen("safety:show", () => cb());
+export const onSafetyShow = (projectId: string, cb: () => void): Promise<UnlistenFn> =>
+  listenProject("safety:show", projectId, cb);
 
 // ── Memory commands (M2) ─────────────────────────────────────────────────────
 
@@ -175,6 +201,7 @@ export interface Memory {
   content: string;
   memory_type: string;
   created_at: number;
+  project_id: string;
 }
 
 export const getMemories = (): Promise<Memory[]> =>
@@ -183,11 +210,11 @@ export const getMemories = (): Promise<Memory[]> =>
 export const getMemoryCount = (): Promise<number> =>
   invoke("get_memory_count");
 
-export const deleteMemory = (id: string): Promise<void> =>
-  invoke("delete_memory", { id });
+export const deleteMemory = (id: string, projectId: string): Promise<void> =>
+  invoke("delete_memory", { id, projectId });
 
-export const forgetAll = (): Promise<void> =>
-  invoke("forget_all");
+export const forgetAll = (projectId: string): Promise<void> =>
+  invoke("forget_all", { projectId });
 
 // ── RAG — document ingestion (M3) ────────────────────────────────────────────
 
@@ -198,12 +225,14 @@ export interface DocumentInfo {
 }
 
 export interface IngestProgress {
+  project_id: string;
   source: string;
   current: number;
   total: number;
 }
 
 export interface IngestResult {
+  project_id: string;
   source: string;
   chunks: number;
 }
@@ -211,14 +240,14 @@ export interface IngestResult {
 export const pickDocument = (): Promise<string | null> =>
   invoke("pick_document");
 
-export const ingestDocument = (path: string): Promise<string> =>
-  invoke("ingest_document", { path });
+export const ingestDocument = (path: string, projectId: string): Promise<string> =>
+  invoke("ingest_document", { path, projectId });
 
 export const listDocuments = (): Promise<DocumentInfo[]> =>
   invoke("list_documents");
 
-export const deleteDocument = (sourceFile: string): Promise<void> =>
-  invoke("delete_document", { sourceFile });
+export const deleteDocument = (sourceFile: string, projectId: string): Promise<void> =>
+  invoke("delete_document", { sourceFile, projectId });
 
 export const onRagProgress = (cb: (p: IngestProgress) => void): Promise<UnlistenFn> =>
   listen<IngestProgress>("rag:progress", (e) => cb(e.payload));
@@ -226,8 +255,13 @@ export const onRagProgress = (cb: (p: IngestProgress) => void): Promise<Unlisten
 export const onRagDone = (cb: (r: IngestResult) => void): Promise<UnlistenFn> =>
   listen<IngestResult>("rag:done", (e) => cb(e.payload));
 
-export const onRagError = (cb: (msg: string) => void): Promise<UnlistenFn> =>
-  listen<string>("rag:error", (e) => cb(e.payload));
+export interface IngestError {
+  project_id: string;
+  message: string;
+}
+
+export const onRagError = (cb: (error: IngestError) => void): Promise<UnlistenFn> =>
+  listen<IngestError>("rag:error", (e) => cb(e.payload));
 
 // ── Setup / download commands (M6) ───────────────────────────────────────────
 

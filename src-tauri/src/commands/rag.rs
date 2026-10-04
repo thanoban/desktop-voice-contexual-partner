@@ -7,6 +7,7 @@ use tauri_plugin_dialog::DialogExt;
 
 #[derive(Serialize, Clone)]
 pub struct IngestProgress {
+    pub project_id: String,
     pub source: String,
     pub current: usize,
     pub total: usize,
@@ -14,8 +15,15 @@ pub struct IngestProgress {
 
 #[derive(Serialize, Clone)]
 pub struct IngestResult {
+    pub project_id: String,
     pub source: String,
     pub chunks: usize,
+}
+
+#[derive(Serialize, Clone)]
+pub struct IngestError {
+    pub project_id: String,
+    pub message: String,
 }
 
 /// Opens a file picker and returns the selected path (or null if cancelled).
@@ -35,7 +43,23 @@ pub fn pick_document(app: AppHandle) -> Option<String> {
 /// Returns immediately; progress is emitted via `rag:progress` events.
 /// Emits `rag:done` on success, `rag:error` on failure.
 #[tauri::command]
-pub async fn ingest_document(app: AppHandle, path: String) -> Result<String, String> {
+pub async fn ingest_document(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    path: String,
+    project_id: String,
+) -> Result<String, String> {
+    let (project_id, endpoint, embedding_model) = {
+        let conn = state.db.lock().map_err(|error| error.to_string())?;
+        crate::db::require_selected_project(&conn, &project_id)?;
+        (
+            crate::db::selected_project_id(&conn),
+            crate::db::get_setting(&conn, "endpoint")
+                .unwrap_or_else(|| "http://localhost:11434".into()),
+            crate::db::get_setting(&conn, "embedding_model")
+                .unwrap_or_else(|| "nomic-embed-text".into()),
+        )
+    };
     let path_buf = PathBuf::from(&path);
     let source_file = path_buf
         .file_name()
@@ -48,17 +72,26 @@ pub async fn ingest_document(app: AppHandle, path: String) -> Result<String, Str
 
     tokio::spawn(async move {
         let state = app_bg.state::<AppState>();
+        let fail = |message: String| {
+            let _ = app_bg.emit(
+                "rag:error",
+                IngestError {
+                    project_id: project_id.clone(),
+                    message,
+                },
+            );
+        };
 
         // Extract text (CPU-bound — spawn_blocking so we don't stall Tokio)
         let text =
             match tokio::task::spawn_blocking(move || crate::rag::extract_text(&path_buf)).await {
                 Ok(Ok(t)) => t,
                 Ok(Err(e)) => {
-                    let _ = app_bg.emit("rag:error", e.to_string());
+                    fail(e.to_string());
                     return;
                 }
                 Err(_) => {
-                    let _ = app_bg.emit("rag:error", "Text extraction task panicked");
+                    fail("Text extraction task panicked".into());
                     return;
                 }
             };
@@ -67,44 +100,29 @@ pub async fn ingest_document(app: AppHandle, path: String) -> Result<String, Str
         let total = chunks.len();
 
         if total == 0 {
-            let _ = app_bg.emit("rag:error", format!("{}: no text found", src));
+            fail(format!("{}: no text found", src));
             return;
         }
 
         let _ = app_bg.emit(
             "rag:progress",
             IngestProgress {
+                project_id: project_id.clone(),
                 source: src.clone(),
                 current: 0,
                 total,
             },
         );
 
-        // Read embedding settings (drop lock before any await)
-        let (endpoint, embedding_model) = {
-            let conn = match state.db.lock() {
-                Ok(c) => c,
-                Err(_) => return,
-            };
-            let ep = crate::db::get_setting(&conn, "endpoint")
-                .unwrap_or_else(|| "http://localhost:11434".into());
-            let em = crate::db::get_setting(&conn, "embedding_model")
-                .unwrap_or_else(|| "nomic-embed-text".into());
-            (ep, em)
-        };
-
         let mut stored = 0usize;
         for (i, chunk) in chunks.iter().enumerate() {
             let emb = match crate::embed::embed_text(&endpoint, &embedding_model, chunk).await {
                 Ok(e) => e,
                 Err(e) => {
-                    let _ = app_bg.emit(
-                        "rag:error",
-                        format!(
-                            "Embedding failed — is '{}' available? Run: ollama pull {}. Error: {}",
-                            embedding_model, embedding_model, e
-                        ),
-                    );
+                    fail(format!(
+                        "Embedding failed — is '{}' available? Run: ollama pull {}. Error: {}",
+                        embedding_model, embedding_model, e
+                    ));
                     return;
                 }
             };
@@ -112,16 +130,24 @@ pub async fn ingest_document(app: AppHandle, path: String) -> Result<String, Str
             {
                 let conn = match state.db.lock() {
                     Ok(c) => c,
-                    Err(_) => return,
+                    Err(_) => {
+                        fail("Document storage lock failed".into());
+                        return;
+                    }
                 };
-                if memory::store_document_chunk(&conn, chunk, &emb, &src).is_ok() {
-                    stored += 1;
+                if let Err(error) =
+                    memory::store_document_chunk(&conn, chunk, &emb, &src, &project_id)
+                {
+                    fail(error.to_string());
+                    return;
                 }
+                stored += 1;
             }
 
             let _ = app_bg.emit(
                 "rag:progress",
                 IngestProgress {
+                    project_id: project_id.clone(),
                     source: src.clone(),
                     current: i + 1,
                     total,
@@ -132,6 +158,7 @@ pub async fn ingest_document(app: AppHandle, path: String) -> Result<String, Str
         let _ = app_bg.emit(
             "rag:done",
             IngestResult {
+                project_id,
                 source: src,
                 chunks: stored,
             },
@@ -151,7 +178,12 @@ pub fn list_documents(state: State<'_, AppState>) -> Vec<DocumentInfo> {
 }
 
 #[tauri::command]
-pub fn delete_document(state: State<'_, AppState>, source_file: String) -> Result<(), String> {
+pub fn delete_document(
+    state: State<'_, AppState>,
+    source_file: String,
+    project_id: String,
+) -> Result<(), String> {
     let conn = state.db.lock().map_err(|e| e.to_string())?;
+    crate::db::require_selected_project(&conn, &project_id)?;
     memory::delete_document(&conn, &source_file).map_err(|e| e.to_string())
 }

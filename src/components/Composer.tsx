@@ -1,12 +1,14 @@
 import { useCallback, useState, type FormEvent, type KeyboardEvent } from "react";
 import { sendMessage, stopSpeaking } from "@/lib/tauri";
 import { useChatStore } from "@/store/chatStore";
+import { useSettingsStore } from "@/store/settingsStore";
 
 interface Props {
   disabled?: boolean;
 }
 
 export function Composer({ disabled = false }: Props) {
+  const projectId = useSettingsStore((state) => state.settings.selected_project_id);
   const [draft, setDraft] = useState("");
   const isProcessing = useChatStore((state) => state.isProcessing);
   const addMessage = useChatStore((state) => state.addMessage);
@@ -20,12 +22,13 @@ export function Composer({ disabled = false }: Props) {
     addMessage({ role: "user", content });
     setProcessing(true);
     try {
-      await sendMessage(content);
+      await sendMessage(content, projectId);
     } catch (error) {
+      if (useSettingsStore.getState().settings.selected_project_id !== projectId) return;
       addMessage({ role: "assistant", content: `[Error: ${String(error)}]` });
       setProcessing(false);
     }
-  }, [addMessage, disabled, draft, isProcessing, setProcessing]);
+  }, [addMessage, disabled, draft, isProcessing, setProcessing, projectId]);
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();

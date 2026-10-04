@@ -2,6 +2,7 @@ pub mod chat;
 pub mod context;
 pub mod history;
 pub mod memory;
+pub mod projects;
 pub mod rag;
 pub mod settings;
 pub mod setup;

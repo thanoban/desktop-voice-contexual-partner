@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSettingsStore } from "@/store/settingsStore";
 import {
   listDocuments,
   deleteDocument,
@@ -17,6 +18,7 @@ interface Props {
 }
 
 export function DocumentPanel({ open, onClose }: Props) {
+  const projectId = useSettingsStore((state) => state.settings.selected_project_id);
   const [docs, setDocs] = useState<DocumentInfo[]>([]);
   const [progress, setProgress] = useState<IngestProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -29,21 +31,23 @@ export function DocumentPanel({ open, onClose }: Props) {
   useEffect(() => {
     if (!open) return;
     const listeners = Promise.all([
-      onRagProgress((p) => setProgress(p)),
-      onRagDone(() => {
+      onRagProgress((p) => { if (p.project_id === projectId) setProgress(p); }),
+      onRagDone((result) => {
+        if (result.project_id !== projectId) return;
         setProgress(null);
         listDocuments().then(setDocs).catch(() => null);
         setError(null);
       }),
-      onRagError((msg) => {
+      onRagError((result) => {
+        if (result.project_id !== projectId) return;
         setProgress(null);
-        setError(msg);
+        setError(result.message);
       }),
     ]);
     return () => {
       listeners.then((fns) => fns.forEach((fn) => fn()));
     };
-  }, [open]);
+  }, [open, projectId]);
 
   if (!open) return null;
 
@@ -52,7 +56,7 @@ export function DocumentPanel({ open, onClose }: Props) {
     try {
       const path = await pickDocument();
       if (!path) return;
-      await ingestDocument(path);
+      await ingestDocument(path, projectId);
       // progress events take over from here
     } catch (e) {
       setError(String(e));
@@ -60,7 +64,9 @@ export function DocumentPanel({ open, onClose }: Props) {
   };
 
   const handleDelete = async (src: string) => {
-    await deleteDocument(src);
+    try {
+      await deleteDocument(src, projectId);
+    } catch (reason) { setError(String(reason)); return; }
     setDocs((d) => d.filter((x) => x.source_file !== src));
   };
 

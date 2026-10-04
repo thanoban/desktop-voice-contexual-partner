@@ -36,6 +36,7 @@ pub async fn start_listening(state: State<'_, AppState>, app: AppHandle) -> Resu
         }
     }
 
+    let scope_lease = state.conversation.begin()?;
     let device_name = {
         let db = state.db.lock().unwrap();
         db::get_setting(&db, "audio_input_device").unwrap_or_default()
@@ -49,6 +50,7 @@ pub async fn start_listening(state: State<'_, AppState>, app: AppHandle) -> Resu
     {
         let mut rec = state.recording.lock().unwrap();
         *rec = Some(ActiveRecording {
+            scope_lease,
             stop_flag: Arc::clone(&recording.stop_flag),
             wav_path,
             completed: recording.completed,

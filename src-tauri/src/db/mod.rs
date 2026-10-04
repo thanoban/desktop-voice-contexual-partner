@@ -1,4 +1,5 @@
 pub mod migrations;
+pub mod projects;
 
 use rusqlite::{Connection, Result};
 
@@ -105,6 +106,16 @@ pub fn selected_project_id(conn: &Connection) -> String {
     get_setting(conn, "selected_project_id").unwrap_or_else(|| DEFAULT_PROJECT_ID.into())
 }
 
+pub fn require_selected_project(
+    conn: &Connection,
+    expected: &str,
+) -> std::result::Result<(), String> {
+    if selected_project_id(conn) != expected {
+        return Err("Workspace changed. Please retry the action in the selected workspace.".into());
+    }
+    Ok(())
+}
+
 fn current_scope(conn: &Connection) -> (String, String) {
     (
         selected_project_id(conn),
@@ -152,6 +163,7 @@ pub struct SessionSummary {
 }
 
 pub fn list_sessions(conn: &Connection) -> Vec<SessionSummary> {
+    let project_id = selected_project_id(conn);
     let mut stmt = conn
         .prepare(
             "SELECT s.id, s.started_at, s.ended_at, COUNT(t.id) as turn_count, \
@@ -159,12 +171,13 @@ pub fn list_sessions(conn: &Connection) -> Vec<SessionSummary> {
              , s.project_id, s.partner_mode \
              FROM sessions s \
              LEFT JOIN turns t ON t.session_id = s.id \
+             WHERE s.project_id = ?1 \
              GROUP BY s.id \
              ORDER BY s.started_at DESC \
              LIMIT 100",
         )
         .unwrap();
-    stmt.query_map([], |row| {
+    stmt.query_map(rusqlite::params![project_id], |row| {
         Ok(SessionSummary {
             id: row.get(0)?,
             started_at: row.get(1)?,
@@ -181,13 +194,15 @@ pub fn list_sessions(conn: &Connection) -> Vec<SessionSummary> {
 }
 
 pub fn get_all_turns(conn: &Connection, session_id: &str) -> Vec<(String, String, i64)> {
+    let project_id = selected_project_id(conn);
     let mut stmt = conn
         .prepare(
-            "SELECT role, content, created_at FROM turns \
-             WHERE session_id = ?1 ORDER BY created_at ASC",
+            "SELECT t.role, t.content, t.created_at FROM turns t \
+             JOIN sessions s ON s.id = t.session_id \
+             WHERE t.session_id = ?1 AND s.project_id = ?2 ORDER BY t.created_at ASC, t.rowid ASC",
         )
         .unwrap();
-    stmt.query_map(rusqlite::params![session_id], |row| {
+    stmt.query_map(rusqlite::params![session_id, project_id], |row| {
         Ok((
             row.get::<_, String>(0)?,
             row.get::<_, String>(1)?,
@@ -214,6 +229,16 @@ mod tests {
         let connection = rusqlite::Connection::open_in_memory().expect("in-memory database");
         super::migrations::run(&connection).expect("migrations");
         connection
+    }
+
+    #[test]
+    fn stale_workspace_request_is_rejected() {
+        let connection = database();
+        super::require_selected_project(&connection, "personal").expect("current scope");
+        let project = super::projects::create(&connection, "Client", "client").expect("project");
+        super::projects::select(&connection, &project.id).expect("select project");
+        assert!(super::require_selected_project(&connection, "personal").is_err());
+        super::require_selected_project(&connection, &project.id).expect("current scope");
     }
 
     #[test]

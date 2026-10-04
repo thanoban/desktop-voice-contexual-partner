@@ -40,16 +40,17 @@ export function Widget() {
   // Wire chat events so status text stays live
   useEffect(() => {
     const uns: Array<() => void> = [];
+    let disposed = false;
     Promise.all([
-      onChatToken((t) => appendToken(t)),
-      onChatDone(() => { finalizeStream(); setProcessing(false); }),
-      onChatError(() => setProcessing(false)),
-      onChatCancelled(() => { finalizeStream(); setProcessing(false); }),
-      onSpeakStart(() => setSpeaking(true)),
-      onSpeakEnd(() => setSpeaking(false)),
-    ]).then((fns) => uns.push(...fns));
-    return () => uns.forEach((f) => f());
-  }, [appendToken, finalizeStream, setProcessing, setSpeaking]);
+      onChatToken(settings.selected_project_id, (t) => { if (!disposed) appendToken(t); }),
+      onChatDone(settings.selected_project_id, () => { if (!disposed) { finalizeStream(); setProcessing(false); } }),
+      onChatError(settings.selected_project_id, () => { if (!disposed) setProcessing(false); }),
+      onChatCancelled(settings.selected_project_id, () => { if (!disposed) { finalizeStream(); setProcessing(false); } }),
+      onSpeakStart(() => { if (!disposed) setSpeaking(true); }),
+      onSpeakEnd(() => { if (!disposed) setSpeaking(false); }),
+    ]).then((fns) => { if (disposed) fns.forEach((fn) => fn()); else uns.push(...fns); });
+    return () => { disposed = true; uns.forEach((f) => f()); };
+  }, [appendToken, finalizeStream, setProcessing, setSpeaking, settings.selected_project_id]);
 
   // ── Toggle: click/Space once to start, again to stop & send ─────────────
 
@@ -68,14 +69,16 @@ export function Widget() {
       setProcessing(true);
       try {
         const text = (await stopListening()).trim();
+        if (useSettingsStore.getState().settings.selected_project_id !== settings.selected_project_id) return;
         if (!text) { setProcessing(false); return; }
         addMessage({ role: "user", content: text });
-        await sendMessage(text);
+        await sendMessage(text, settings.selected_project_id);
       } catch {
+        if (useSettingsStore.getState().settings.selected_project_id !== settings.selected_project_id) return;
         setProcessing(false);
       }
     }
-  }, [isListening, isProcessing, setListening, setProcessing, addMessage]);
+  }, [isListening, isProcessing, setListening, setProcessing, addMessage, ollamaStatus, settings.selected_project_id]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -87,8 +90,9 @@ export function Widget() {
 
   useEffect(() => {
     let unlisten: (() => void) | null = null;
-    onPttToggle(() => handleToggle()).then((fn) => { unlisten = fn; });
-    return () => { unlisten?.(); };
+    let disposed = false;
+    onPttToggle(() => { if (!disposed) void handleToggle(); }).then((fn) => { if (disposed) fn(); else unlisten = fn; });
+    return () => { disposed = true; unlisten?.(); };
   }, [handleToggle]);
 
   // ── Status text ───────────────────────────────────────────────────────────

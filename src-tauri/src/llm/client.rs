@@ -5,6 +5,7 @@ use tauri::AppHandle;
 use tauri::Emitter;
 
 use crate::conversation::controller::CancellationToken;
+use crate::domain::events::ProjectEvent;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ChatMessage {
@@ -57,6 +58,7 @@ pub async fn stream_chat(
     model: &str,
     messages: Vec<ChatMessage>,
     cancellation: &CancellationToken,
+    project_id: &str,
 ) -> Result<StreamChatResult> {
     let client = build_client()?;
     let url = format!("{}/api/chat", endpoint.trim_end_matches('/'));
@@ -104,7 +106,7 @@ pub async fn stream_chat(
         let Some(chunk) = next else { break };
         let bytes = chunk.map_err(|e| anyhow!("Stream error: {}", e))?;
         for chunk in decoder.push(&bytes)? {
-            terminal = consume_chunk(app, chunk, &mut full_content)?;
+            terminal = consume_chunk(app, chunk, &mut full_content, project_id)?;
             if terminal {
                 break;
             }
@@ -116,7 +118,7 @@ pub async fn stream_chat(
 
     if !terminal {
         for chunk in decoder.finish()? {
-            terminal = consume_chunk(app, chunk, &mut full_content)?;
+            terminal = consume_chunk(app, chunk, &mut full_content, project_id)?;
         }
     }
 
@@ -139,6 +141,7 @@ fn consume_chunk(
     app: &AppHandle,
     chunk: OllamaChatChunk,
     full_content: &mut String,
+    project_id: &str,
 ) -> Result<bool> {
     if let Some(error) = chunk.error {
         return Err(anyhow!("Ollama stream error: {}", error));
@@ -146,7 +149,10 @@ fn consume_chunk(
     if let Some(message) = chunk.message {
         if !message.content.is_empty() {
             full_content.push_str(&message.content);
-            let _ = app.emit("chat:token", &message.content);
+            let _ = app.emit(
+                "chat:token",
+                ProjectEvent::new(project_id, &message.content),
+            );
         }
     }
     Ok(chunk.done)

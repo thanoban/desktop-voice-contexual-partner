@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { getMemories, deleteMemory, forgetAll, type Memory } from "@/lib/tauri";
+import { useSettingsStore } from "@/store/settingsStore";
 
 interface Props {
   open: boolean;
@@ -7,6 +8,8 @@ interface Props {
 }
 
 export function MemoryPanel({ open, onClose }: Props) {
+  const projectId = useSettingsStore((state) => state.settings.selected_project_id);
+  const [error, setError] = useState("");
   const [memories, setMemories] = useState<Memory[]>([]);
   const [loading, setLoading] = useState(false);
   const [confirmForget, setConfirmForget] = useState(false);
@@ -16,18 +19,21 @@ export function MemoryPanel({ open, onClose }: Props) {
     setLoading(true);
     getMemories()
       .then(setMemories)
+      .catch((reason) => setError(String(reason)))
       .finally(() => setLoading(false));
   }, [open]);
 
   if (!open) return null;
 
   const handleDelete = async (id: string) => {
-    await deleteMemory(id);
+    try { await deleteMemory(id, projectId); }
+    catch (reason) { setError(String(reason)); return; }
     setMemories((m) => m.filter((x) => x.id !== id));
   };
 
   const handleForgetAll = async () => {
-    await forgetAll();
+    try { await forgetAll(projectId); }
+    catch (reason) { setError(String(reason)); return; }
     setMemories([]);
     setConfirmForget(false);
   };
@@ -82,6 +88,7 @@ export function MemoryPanel({ open, onClose }: Props) {
 
         {/* List */}
         <div style={{ overflowY: "auto", flex: 1, padding: "12px 16px" }}>
+          {error && <p role="alert" style={{ color: "var(--error)", fontSize: "12px" }}>{error}</p>}
           {loading && (
             <p style={{ fontSize: "13px", color: "var(--text-muted)", textAlign: "center", padding: "20px 0" }}>
               Loading…

@@ -1,5 +1,6 @@
 import { useEffect, useCallback } from "react";
 import { useChatStore } from "@/store/chatStore";
+import { useSettingsStore } from "@/store/settingsStore";
 import { startListening, stopListening, stopSpeaking, sendMessage, onPttToggle } from "@/lib/tauri";
 
 interface Props {
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export function VoiceButton({ disabled, voiceReady = true, onNeedsSetup }: Props) {
+  const projectId = useSettingsStore((state) => state.settings.selected_project_id);
   const isListening  = useChatStore((s) => s.isListening);
   const isProcessing = useChatStore((s) => s.isProcessing);
   const isSpeaking   = useChatStore((s) => s.isSpeaking);
@@ -52,16 +54,18 @@ export function VoiceButton({ disabled, voiceReady = true, onNeedsSetup }: Props
       setProcessing(true);
       try {
         const transcript = await stopListening();
+        if (useSettingsStore.getState().settings.selected_project_id !== projectId) return;
         if (!transcript?.trim()) { setProcessing(false); return; }
         const text = transcript.trim();
         addMessage({ role: "user", content: text });
-        await sendMessage(text);
+        await sendMessage(text, projectId);
       } catch (e) {
+        if (useSettingsStore.getState().settings.selected_project_id !== projectId) return;
         addMessage({ role: "assistant", content: `[Error: ${e}]` });
         setProcessing(false);
       }
     }
-  }, [disabled, isListening, isProcessing, isSpeaking, voiceReady, onNeedsSetup, setListening, setProcessing, addMessage]);
+  }, [disabled, isListening, isProcessing, isSpeaking, voiceReady, onNeedsSetup, setListening, setProcessing, addMessage, projectId]);
 
   // ── Space bar toggle (window focused) ────────────────────────────────────
   useEffect(() => {
@@ -78,8 +82,9 @@ export function VoiceButton({ disabled, voiceReady = true, onNeedsSetup }: Props
   // ── Global Alt+Space toggle (works from tray / background) ───────────────
   useEffect(() => {
     let unlisten: (() => void) | null = null;
-    onPttToggle(() => handleToggle()).then((fn) => { unlisten = fn; });
-    return () => { unlisten?.(); };
+    let disposed = false;
+    onPttToggle(() => { if (!disposed) void handleToggle(); }).then((fn) => { if (disposed) fn(); else unlisten = fn; });
+    return () => { disposed = true; unlisten?.(); };
   }, [handleToggle]);
 
   // ── Render ────────────────────────────────────────────────────────────────

@@ -23,6 +23,7 @@ The plan was published at `bc734ce` on `main`, with earlier local documents pres
 | Playback cancellation | planned | UI no longer claims subprocess playback stopped; native playback ownership remains required |
 | Partner modes | implemented | Company, Work and Focus are persisted preferences and alter backend conversation behavior |
 | Schema v7 project boundary | unit-tested | Legacy sessions and memories migrate to the explicit Personal scope; new sessions record project and mode |
+| Project-scoped retrieval, history and workspace switching | unit-tested | Memories, documents, sessions and turns filter by selected project; stale-workspace requests are rejected; switching opens a fresh session; 26 Rust tests pass. Indexed/relevance-bounded retrieval (replacing the 200-entry scan) remains planned |
 | Live voice, provider, integration and installed-device behavior | planned | Requires the later stage gates below |
 
 ## Stage gates

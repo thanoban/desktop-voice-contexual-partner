@@ -13,6 +13,7 @@ pub struct Settings {
     pub companion_name: String,
     pub personality: String,
     pub partner_mode: String,
+    pub selected_project_id: String,
     pub onboarding_done: String,
     // TTS
     pub piper_binary: String,
@@ -47,6 +48,7 @@ impl Default for Settings {
             companion_name: "Amy".into(),
             personality: "gentle".into(),
             partner_mode: "company".into(),
+            selected_project_id: db::DEFAULT_PROJECT_ID.into(),
             onboarding_done: "false".into(),
             piper_binary: String::new(),
             piper_voice: "en_US-amy-medium".into(),
@@ -82,6 +84,7 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<Settings, String> {
             .unwrap_or(d.companion_name),
         personality: pairs.get("personality").cloned().unwrap_or(d.personality),
         partner_mode: pairs.get("partner_mode").cloned().unwrap_or(d.partner_mode),
+        selected_project_id: db::selected_project_id(&conn),
         onboarding_done: pairs
             .get("onboarding_done")
             .cloned()
@@ -143,6 +146,9 @@ pub fn update_setting(
     key: String,
     value: String,
 ) -> Result<(), String> {
+    if key == "selected_project_id" {
+        return Err("Use select_project to change project scope".into());
+    }
     let conn = state.db.lock().map_err(|e| e.to_string())?;
     db::set_setting(&conn, &key, &value).map_err(|e| e.to_string())
 }

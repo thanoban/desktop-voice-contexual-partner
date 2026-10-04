@@ -3,6 +3,22 @@ use serde_json::Value;
 
 use super::CONTRACT_SCHEMA_VERSION;
 
+/// Transitional payload for legacy UI events until ordered session events are wired.
+#[derive(Debug, Clone, Serialize)]
+pub struct ProjectEvent<T> {
+    pub project_id: String,
+    pub payload: T,
+}
+
+impl<T> ProjectEvent<T> {
+    pub fn new(project_id: &str, payload: T) -> Self {
+        Self {
+            project_id: project_id.into(),
+            payload,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EventEnvelope {
     pub schema_version: u16,

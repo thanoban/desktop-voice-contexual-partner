@@ -75,5 +75,5 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setSpeaking: (v) => set({ isSpeaking: v }),
   setProcessing: (v) => set({ isProcessing: v }),
   setSession: (id) => set({ currentSessionId: id }),
-  clearMessages: () => set({ messages: [], streamingContent: "", currentSessionId: null }),
+  clearMessages: () => set({ messages: [], streamingContent: "", currentSessionId: null, isStreaming: false, isProcessing: false, isListening: false }),
 }));

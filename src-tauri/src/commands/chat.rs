@@ -1,4 +1,5 @@
 use crate::db;
+use crate::domain::events::ProjectEvent;
 use crate::llm::client::ChatMessage;
 use crate::memory;
 use crate::safety;
@@ -82,6 +83,7 @@ pub async fn send_message(
     state: State<'_, AppState>,
     app: AppHandle,
     content: String,
+    project_id: String,
 ) -> Result<(), String> {
     let turn = state.conversation.begin()?;
     let cancellation = turn.cancellation();
@@ -108,6 +110,7 @@ pub async fn send_message(
         kokoro_voices,
     ) = {
         let conn = state.db.lock().map_err(|e| e.to_string())?;
+        db::require_selected_project(&conn, &project_id)?;
         let sid = db::ensure_session(&conn).map_err(|e| e.to_string())?;
         db::save_turn(&conn, &sid, "user", &content).map_err(|e| e.to_string())?;
         let model = db::get_setting(&conn, "model").unwrap_or_else(|| "llama3.2:8b".into());
@@ -236,13 +239,19 @@ pub async fn send_message(
     }
 
     // Stream from Ollama
-    let stream_result =
-        crate::llm::client::stream_chat(&app, &endpoint, &model, messages, &cancellation)
-            .await
-            .map_err(|e| {
-                let _ = app.emit("chat:error", e.to_string());
-                e.to_string()
-            })?;
+    let stream_result = crate::llm::client::stream_chat(
+        &app,
+        &endpoint,
+        &model,
+        messages,
+        &cancellation,
+        &project_id,
+    )
+    .await
+    .map_err(|e| {
+        let _ = app.emit("chat:error", ProjectEvent::new(&project_id, e.to_string()));
+        e.to_string()
+    })?;
 
     if stream_result.cancelled {
         if !stream_result.content.is_empty() {
@@ -250,7 +259,7 @@ pub async fn send_message(
             db::save_turn(&conn, &session_id, "assistant", &stream_result.content)
                 .map_err(|e| e.to_string())?;
         }
-        let _ = app.emit("chat:cancelled", turn.id());
+        let _ = app.emit("chat:cancelled", ProjectEvent::new(&project_id, turn.id()));
         return Ok(());
     }
     let full_response = stream_result.content;
@@ -269,11 +278,11 @@ pub async fn send_message(
             .map_err(|e| e.to_string())?;
     }
 
-    let _ = app.emit("chat:done", ());
+    let _ = app.emit("chat:done", ProjectEvent::new(&project_id, ()));
 
     // Emit safety panel signal if distress detected
     if distress != safety::DistressLevel::None {
-        let _ = app.emit("safety:show", ());
+        let _ = app.emit("safety:show", ProjectEvent::new(&project_id, ()));
     }
 
     // Background: summarize + embed + store memory every 4 turns (4, 8, 12, ...)
@@ -334,6 +343,8 @@ pub async fn send_message(
         let kok_m = kokoro_model.clone();
         let kok_v = kokoro_voices.clone();
         tokio::spawn(async move {
+            // Keep the workspace boundary closed until uncancellable legacy speech returns.
+            let _scope_lease = turn;
             let _ = crate::tts::piper::speak(
                 &app_clone,
                 &binary_clone,
@@ -352,7 +363,11 @@ pub async fn send_message(
 }
 
 #[tauri::command]
-pub async fn get_greeting(state: State<'_, AppState>, app: AppHandle) -> Result<(), String> {
+pub async fn get_greeting(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    project_id: String,
+) -> Result<(), String> {
     let turn = state.conversation.begin()?;
     let cancellation = turn.cancellation();
 
@@ -371,6 +386,7 @@ pub async fn get_greeting(state: State<'_, AppState>, app: AppHandle) -> Result<
         kokoro_voices,
     ) = {
         let conn = state.db.lock().map_err(|e| e.to_string())?;
+        db::require_selected_project(&conn, &project_id)?;
         let sid = db::ensure_session(&conn).map_err(|e| e.to_string())?;
         let model = db::get_setting(&conn, "model").unwrap_or_else(|| "llama3.2:8b".into());
         let endpoint =
@@ -413,16 +429,22 @@ pub async fn get_greeting(state: State<'_, AppState>, app: AppHandle) -> Result<
         },
     ];
 
-    let stream_result =
-        crate::llm::client::stream_chat(&app, &endpoint, &model, messages, &cancellation)
-            .await
-            .map_err(|e| {
-                let _ = app.emit("chat:error", e.to_string());
-                e.to_string()
-            })?;
+    let stream_result = crate::llm::client::stream_chat(
+        &app,
+        &endpoint,
+        &model,
+        messages,
+        &cancellation,
+        &project_id,
+    )
+    .await
+    .map_err(|e| {
+        let _ = app.emit("chat:error", ProjectEvent::new(&project_id, e.to_string()));
+        e.to_string()
+    })?;
 
     if stream_result.cancelled {
-        let _ = app.emit("chat:cancelled", turn.id());
+        let _ = app.emit("chat:cancelled", ProjectEvent::new(&project_id, turn.id()));
         return Ok(());
     }
     let full_response = stream_result.content;
@@ -433,13 +455,14 @@ pub async fn get_greeting(state: State<'_, AppState>, app: AppHandle) -> Result<
             .map_err(|e| e.to_string())?;
     }
 
-    let _ = app.emit("chat:done", ());
+    let _ = app.emit("chat:done", ProjectEvent::new(&project_id, ()));
 
     if !piper_voice.is_empty() {
         let speed = voice_speed.parse::<f32>().unwrap_or(1.0);
         let expr = voice_expressiveness.parse::<f32>().unwrap_or(0.667);
         let app_clone = app.clone();
         tokio::spawn(async move {
+            let _scope_lease = turn;
             let _ = crate::tts::piper::speak(
                 &app_clone,
                 &piper_binary,

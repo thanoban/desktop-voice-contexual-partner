@@ -14,6 +14,7 @@ const defaults: Settings = {
   companion_name: "Amy",
   personality: "gentle",
   partner_mode: "company",
+  selected_project_id: "personal",
   piper_binary: "",
   piper_voice: "en_US-amy-medium",
   onboarding_done: "false",

@@ -58,6 +58,24 @@ pub struct ConversationController {
 }
 
 impl ConversationController {
+    pub fn while_idle<T>(
+        &self,
+        operation: impl FnOnce() -> Result<T, String>,
+    ) -> Result<T, String> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| "Conversation controller lock failed".to_string())?;
+        if state.active.is_some() {
+            return Err(
+                "Wait for the active conversation to finish before switching projects".into(),
+            );
+        }
+        let result = operation();
+        drop(state);
+        result
+    }
+
     pub fn begin(self: &Arc<Self>) -> Result<TurnLease, String> {
         let mut state = self
             .state
@@ -167,5 +185,21 @@ mod tests {
             controller.cancel_active(),
             CancelRequestStatus::NoActiveTurn
         );
+    }
+
+    #[test]
+    fn project_switch_operation_cannot_run_during_active_turn() {
+        let controller = Arc::new(ConversationController::default());
+        let lease = controller.begin().unwrap();
+        let mut called = false;
+        assert!(controller
+            .while_idle(|| {
+                called = true;
+                Ok(())
+            })
+            .is_err());
+        assert!(!called);
+        drop(lease);
+        assert!(controller.while_idle(|| Ok(())).is_ok());
     }
 }

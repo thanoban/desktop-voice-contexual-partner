@@ -21,13 +21,19 @@ pub fn get_memory_count(state: State<'_, AppState>) -> i64 {
 }
 
 #[tauri::command]
-pub fn delete_memory(state: State<'_, AppState>, id: String) -> Result<(), String> {
+pub fn delete_memory(
+    state: State<'_, AppState>,
+    id: String,
+    project_id: String,
+) -> Result<(), String> {
     let conn = state.db.lock().map_err(|e| e.to_string())?;
+    crate::db::require_selected_project(&conn, &project_id)?;
     memory::delete_memory(&conn, &id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn forget_all(state: State<'_, AppState>) -> Result<(), String> {
+pub fn forget_all(state: State<'_, AppState>, project_id: String) -> Result<(), String> {
     let conn = state.db.lock().map_err(|e| e.to_string())?;
+    crate::db::require_selected_project(&conn, &project_id)?;
     memory::forget_all(&conn).map_err(|e| e.to_string())
 }

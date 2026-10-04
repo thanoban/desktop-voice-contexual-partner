@@ -5,6 +5,7 @@ import { VoiceButton } from "@/components/VoiceButton";
 import { VoiceVisualizer } from "@/components/VoiceVisualizer";
 import { Composer } from "@/components/Composer";
 import { PartnerModeSwitch } from "@/components/PartnerModeSwitch";
+import { ProjectSwitcher } from "@/components/ProjectSwitcher";
 import { StatusBar } from "@/components/StatusBar";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { SafetyPanel } from "@/components/SafetyPanel";
@@ -51,31 +52,36 @@ export default function App() {
   // Wire up Tauri event listeners
   useEffect(() => {
     const unlisteners: Array<() => void> = [];
+    let disposed = false;
 
     Promise.all([
-      onChatToken((token) => appendToken(token)),
-      onChatDone(() => {
+      onChatToken(settings.selected_project_id, (token) => { if (!disposed) appendToken(token); }),
+      onChatDone(settings.selected_project_id, () => {
+        if (disposed) return;
         finalizeStream();
         setProcessing(false);
       }),
-      onChatError((msg) => {
+      onChatError(settings.selected_project_id, (msg) => {
+        if (disposed) return;
         addMessage({ role: "assistant", content: `[Error: ${msg}]` });
         setProcessing(false);
       }),
-      onChatCancelled(() => {
+      onChatCancelled(settings.selected_project_id, () => {
+        if (disposed) return;
         finalizeStream();
         setProcessing(false);
       }),
-      onSpeakStart(() => setSpeaking(true)),
-      onSpeakEnd(() => setSpeaking(false)),
-      onSafetyShow(() => setSafetyVisible(true)),
-      onContextUpdate((s) => setCtx(s)),
+      onSpeakStart(() => { if (!disposed) setSpeaking(true); }),
+      onSpeakEnd(() => { if (!disposed) setSpeaking(false); }),
+      onSafetyShow(settings.selected_project_id, () => { if (!disposed) setSafetyVisible(true); }),
+      onContextUpdate((s) => { if (!disposed) setCtx(s); }),
     ]).then((fns) => {
+      if (disposed) { fns.forEach((fn) => fn()); return; }
       unlisteners.push(...fns);
     });
 
-    return () => unlisteners.forEach((fn) => fn());
-  }, [appendToken, finalizeStream, setProcessing, setSpeaking, addMessage]);
+    return () => { disposed = true; unlisteners.forEach((fn) => fn()); };
+  }, [appendToken, finalizeStream, setProcessing, setSpeaking, addMessage, settings.selected_project_id]);
 
   // Global keyboard shortcut: ? opens About, Esc closes all panels
   useEffect(() => {
@@ -100,9 +106,11 @@ export default function App() {
     if (ollamaStatus === "connected" && onboardingDone && !greeted) {
       setGreeted(true);
       setProcessing(true);
-      getGreeting().catch(() => setProcessing(false));
+      getGreeting(settings.selected_project_id).catch(() => {
+        if (useSettingsStore.getState().settings.selected_project_id === settings.selected_project_id) setProcessing(false);
+      });
     }
-  }, [ollamaStatus, onboardingDone, greeted, setProcessing]);
+  }, [ollamaStatus, onboardingDone, greeted, setProcessing, settings.selected_project_id]);
 
   if (!loaded) {
     return (
@@ -198,6 +206,7 @@ export default function App() {
       </div>
 
       <PartnerModeSwitch />
+      <ProjectSwitcher />
 
       {/* Transcript */}
       <Transcript />

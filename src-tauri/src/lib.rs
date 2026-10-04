@@ -44,6 +44,7 @@ pub struct AppState {
 }
 
 pub struct ActiveRecording {
+    pub scope_lease: conversation::controller::TurnLease,
     pub stop_flag: Arc<AtomicBool>,
     pub wav_path: PathBuf,
     pub completed: tokio::sync::oneshot::Receiver<Result<(), String>>,
@@ -245,6 +246,9 @@ pub fn run() {
             // History
             commands::history::list_sessions,
             commands::history::get_session_turns,
+            commands::projects::list_projects,
+            commands::projects::create_project,
+            commands::projects::select_project,
             // System
             commands::system::get_ollama_status,
             commands::system::list_models,

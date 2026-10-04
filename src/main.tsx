@@ -15,6 +15,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { Widget } from "./Widget";
+import { WorkspaceBoundary } from "./components/WorkspaceBoundary";
 import "./styles.css";
 
 const isWidget = new URLSearchParams(window.location.search).has("widget");
@@ -25,6 +26,6 @@ if (isWidget) {
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    {isWidget ? <Widget /> : <App />}
+    <WorkspaceBoundary>{isWidget ? <Widget /> : <App />}</WorkspaceBoundary>
   </React.StrictMode>
 );
