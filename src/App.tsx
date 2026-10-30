@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useConversationSync } from "@/lib/useConversationSync";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Transcript } from "@/components/Transcript";
 import { VoiceButton } from "@/components/VoiceButton";
@@ -13,16 +14,9 @@ import { ModelSetupPanel } from "@/components/ModelSetupPanel";
 import { AboutDialog } from "@/components/AboutDialog";
 import { HistoryPanel } from "@/components/HistoryPanel";
 import { Onboarding } from "@/components/Onboarding";
-import { useChatStore } from "@/store/chatStore";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useOllamaStore } from "@/store/ollamaStore";
 import {
-  onChatToken,
-  onChatDone,
-  onChatError,
-  onChatCancelled,
-  onSpeakStart,
-  onSpeakEnd,
   onSafetyShow,
   onContextUpdate,
   startSharingContext,
@@ -40,7 +34,7 @@ export default function App() {
   const [ctx, setCtx] = useState<ContextStatus>({ sharing: false });
 
   const { settings, load: loadSettings, loaded } = useSettingsStore();
-  const { appendToken, finalizeStream, setProcessing, setSpeaking, addMessage } = useChatStore();
+  useConversationSync(settings.selected_project_id);
   const ollamaStatus = useOllamaStore((s) => s.status);
 
   const onboardingDone = settings.onboarding_done === "true";
@@ -55,33 +49,15 @@ export default function App() {
     let disposed = false;
 
     Promise.all([
-      onChatToken(settings.selected_project_id, (token) => { if (!disposed) appendToken(token); }),
-      onChatDone(settings.selected_project_id, () => {
-        if (disposed) return;
-        finalizeStream();
-        setProcessing(false);
-      }),
-      onChatError(settings.selected_project_id, (msg) => {
-        if (disposed) return;
-        addMessage({ role: "assistant", content: `[Error: ${msg}]` });
-        setProcessing(false);
-      }),
-      onChatCancelled(settings.selected_project_id, () => {
-        if (disposed) return;
-        finalizeStream();
-        setProcessing(false);
-      }),
-      onSpeakStart(() => { if (!disposed) setSpeaking(true); }),
-      onSpeakEnd(() => { if (!disposed) setSpeaking(false); }),
       onSafetyShow(settings.selected_project_id, () => { if (!disposed) setSafetyVisible(true); }),
-      onContextUpdate((s) => { if (!disposed) setCtx(s); }),
+      onContextUpdate((s) => { if (!disposed) { setCtx(s); if (!s.sharing) void useSettingsStore.getState().load(); } }),
     ]).then((fns) => {
       if (disposed) { fns.forEach((fn) => fn()); return; }
       unlisteners.push(...fns);
     });
 
     return () => { disposed = true; unlisteners.forEach((fn) => fn()); };
-  }, [appendToken, finalizeStream, setProcessing, setSpeaking, addMessage, settings.selected_project_id]);
+  }, [settings.selected_project_id]);
 
   // Global keyboard shortcut: ? opens About, Esc closes all panels
   useEffect(() => {
@@ -105,12 +81,10 @@ export default function App() {
   useEffect(() => {
     if (ollamaStatus === "connected" && onboardingDone && !greeted) {
       setGreeted(true);
-      setProcessing(true);
-      getGreeting(settings.selected_project_id).catch(() => {
-        if (useSettingsStore.getState().settings.selected_project_id === settings.selected_project_id) setProcessing(false);
-      });
+      // Conversation snapshots own processing state, including admission rejection.
+      void getGreeting(settings.selected_project_id).catch(() => undefined);
     }
-  }, [ollamaStatus, onboardingDone, greeted, setProcessing, settings.selected_project_id]);
+  }, [ollamaStatus, onboardingDone, greeted, settings.selected_project_id]);
 
   if (!loaded) {
     return (

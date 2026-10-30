@@ -28,9 +28,13 @@ jobs:
         run: ./scripts/verify-contracts.ps1
       - name: Build frontend
         run: npm run build
+      - name: Test conversation snapshot ordering
+        run: node --test scripts/test-conversation-snapshot.mjs scripts/test-voice-interaction.mjs
       - name: Check Rust formatting
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
       - name: Run Rust lints
         run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
       - name: Run Rust tests
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+      - name: Build native application
+        run: cargo build --locked --manifest-path src-tauri/Cargo.toml --bin voicepartner

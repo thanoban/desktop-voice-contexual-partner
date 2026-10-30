@@ -7,6 +7,63 @@ use crate::AppState;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
+pub(crate) fn begin_audio(
+    app: &AppHandle,
+    phase: crate::conversation::controller::AudioPhase,
+) -> Result<crate::conversation::controller::AudioLease, String> {
+    let state = app.state::<AppState>();
+    state
+        .conversation
+        .begin_audio(phase, || {
+            let conn = state.db.lock().map_err(|e| e.to_string())?;
+            let project_id = db::selected_project_id(&conn);
+            let session_id = db::ensure_session(&conn).map_err(|e| e.to_string())?;
+            let messages = db::get_all_turns(&conn, &session_id)
+                .into_iter()
+                .enumerate()
+                .map(|(index, (role, content, timestamp))| {
+                    crate::conversation::controller::TranscriptMessage {
+                        id: format!("{session_id}:{index}"),
+                        role,
+                        content,
+                        timestamp,
+                    }
+                })
+                .collect();
+            Ok((project_id, session_id, messages))
+        })
+        .map(|lease| lease.with_events(app.clone()))
+}
+
+fn publish_transcript(
+    state: &AppState,
+    app: &AppHandle,
+    project_id: &str,
+    session_id: &str,
+    generating: bool,
+) -> Result<(), String> {
+    let messages = {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        db::get_all_turns(&conn, session_id)
+            .into_iter()
+            .enumerate()
+            .map(|(index, (role, content, timestamp))| {
+                crate::conversation::controller::TranscriptMessage {
+                    id: format!("{session_id}:{index}"),
+                    role,
+                    content,
+                    timestamp,
+                }
+            })
+            .collect()
+    };
+    state
+        .conversation
+        .hydrate(project_id, session_id, messages, generating);
+    let _ = app.emit("conversation:snapshot", state.conversation.snapshot());
+    Ok(())
+}
+
 fn format_age(created_at_ms: i64) -> String {
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -85,7 +142,8 @@ pub async fn send_message(
     content: String,
     project_id: String,
 ) -> Result<(), String> {
-    let turn = state.conversation.begin()?;
+    let speech_epoch = crate::tts::playback::global().epoch();
+    let turn = state.conversation.begin()?.with_events(app.clone());
     let cancellation = turn.cancellation();
 
     // Check distress before anything else
@@ -94,6 +152,7 @@ pub async fn send_message(
     // DB work — all sync, no .await held
     let (
         session_id,
+        write_guard,
         model,
         endpoint,
         personality,
@@ -103,7 +162,6 @@ pub async fn send_message(
         piper_voice,
         voice_speed,
         voice_expressiveness,
-        window_context_auto,
         embedding_model,
         custom_system_prompt,
         kokoro_model,
@@ -112,6 +170,7 @@ pub async fn send_message(
         let conn = state.db.lock().map_err(|e| e.to_string())?;
         db::require_selected_project(&conn, &project_id)?;
         let sid = db::ensure_session(&conn).map_err(|e| e.to_string())?;
+        let write_guard = memory::summary_guard(&conn, &project_id).map_err(|e| e.to_string())?;
         db::save_turn(&conn, &sid, "user", &content).map_err(|e| e.to_string())?;
         let model = db::get_setting(&conn, "model").unwrap_or_else(|| "llama3.2:8b".into());
         let endpoint =
@@ -124,18 +183,30 @@ pub async fn send_message(
             db::get_setting(&conn, "piper_voice").unwrap_or_else(|| "en_US-amy-medium".into());
         let speed = db::get_setting(&conn, "voice_speed").unwrap_or_else(|| "1.0".into());
         let expr = db::get_setting(&conn, "voice_expressiveness").unwrap_or_else(|| "0.667".into());
-        let ctx_auto =
-            db::get_setting(&conn, "window_context_auto").unwrap_or_else(|| "false".into());
         let emb_mdl =
             db::get_setting(&conn, "embedding_model").unwrap_or_else(|| "nomic-embed-text".into());
         let custom_sys = db::get_setting(&conn, "custom_system_prompt").unwrap_or_default();
         let kok_model = db::get_setting(&conn, "kokoro_model").unwrap_or_default();
         let kok_voices = db::get_setting(&conn, "kokoro_voices").unwrap_or_default();
         (
-            sid, model, endpoint, persona, mode, name, piper, voice, speed, expr, ctx_auto,
-            emb_mdl, custom_sys, kok_model, kok_voices,
+            sid,
+            write_guard,
+            model,
+            endpoint,
+            persona,
+            mode,
+            name,
+            piper,
+            voice,
+            speed,
+            expr,
+            emb_mdl,
+            custom_sys,
+            kok_model,
+            kok_voices,
         )
     }; // MutexGuard dropped here
+    publish_transcript(&state, &app, &project_id, &session_id, true)?;
 
     // Build recent context
     let recent_turns = {
@@ -180,7 +251,12 @@ pub async fn send_message(
     // Build context injection: auto (always-on) or manual sharing
     let context_block = {
         let ctx = state.context.lock().map_err(|e| e.to_string())?;
-        let title = if window_context_auto == "true" {
+        let auto_allowed = {
+            let conn = state.db.lock().map_err(|e| e.to_string())?;
+            db::get_setting(&conn, "window_context_auto").as_deref() == Some("true")
+                && db::get_setting(&conn, "window_context_allowed").as_deref() == Some("true")
+        };
+        let title = if auto_allowed {
             // Live detection every message — no user action required
             crate::context::get_active_window_title()
         } else if ctx.sharing {
@@ -239,6 +315,7 @@ pub async fn send_message(
     }
 
     // Stream from Ollama
+    let generation_timer = crate::telemetry::timing::StageTimer::start("generation");
     let stream_result = crate::llm::client::stream_chat(
         &app,
         &endpoint,
@@ -246,9 +323,25 @@ pub async fn send_message(
         messages,
         &cancellation,
         &project_id,
+        turn.id(),
     )
-    .await
-    .map_err(|e| {
+    .await;
+    let timing = generation_timer.finish();
+    tracing::info!(
+        stage = timing.stage.as_str(),
+        duration_ms = timing.duration_ms,
+        outcome = if stream_result.is_err() {
+            "failed"
+        } else if stream_result.as_ref().is_ok_and(|result| result.cancelled) {
+            "cancelled"
+        } else {
+            "completed"
+        },
+        "voice stage elapsed"
+    );
+    let stream_result = stream_result.map_err(|e| {
+        state.conversation.fail(e.to_string());
+        let _ = app.emit("conversation:snapshot", state.conversation.snapshot());
         let _ = app.emit("chat:error", ProjectEvent::new(&project_id, e.to_string()));
         e.to_string()
     })?;
@@ -260,6 +353,7 @@ pub async fn send_message(
                 .map_err(|e| e.to_string())?;
         }
         let _ = app.emit("chat:cancelled", ProjectEvent::new(&project_id, turn.id()));
+        publish_transcript(&state, &app, &project_id, &session_id, false)?;
         return Ok(());
     }
     let full_response = stream_result.content;
@@ -279,6 +373,7 @@ pub async fn send_message(
     }
 
     let _ = app.emit("chat:done", ProjectEvent::new(&project_id, ()));
+    publish_transcript(&state, &app, &project_id, &session_id, false)?;
 
     // Emit safety panel signal if distress detected
     if distress != safety::DistressLevel::None {
@@ -328,7 +423,8 @@ pub async fn send_message(
                 Ok(c) => c,
                 Err(_) => return,
             };
-            let _ = memory::store_memory(&conn, &sid_bg, &summary, &embedding, "session_summary");
+            let _ =
+                memory::store_summary_checked(&conn, &write_guard, &sid_bg, &summary, &embedding);
         });
     }
 
@@ -343,9 +439,9 @@ pub async fn send_message(
         let kok_m = kokoro_model.clone();
         let kok_v = kokoro_voices.clone();
         tokio::spawn(async move {
-            // Keep the workspace boundary closed until uncancellable legacy speech returns.
+            // Keep the workspace boundary closed until speech finishes or cancellation returns.
             let _scope_lease = turn;
-            let _ = crate::tts::piper::speak(
+            let _ = crate::tts::piper::speak_at_epoch(
                 &app_clone,
                 &binary_clone,
                 &voice_clone,
@@ -354,6 +450,7 @@ pub async fn send_message(
                 expr,
                 &kok_m,
                 &kok_v,
+                speech_epoch,
             )
             .await;
         });
@@ -368,7 +465,8 @@ pub async fn get_greeting(
     app: AppHandle,
     project_id: String,
 ) -> Result<(), String> {
-    let turn = state.conversation.begin()?;
+    let speech_epoch = crate::tts::playback::global().epoch();
+    let turn = state.conversation.begin()?.with_events(app.clone());
     let cancellation = turn.cancellation();
 
     let (
@@ -410,13 +508,16 @@ pub async fn get_greeting(
         let conn = state.db.lock().map_err(|e| e.to_string())?;
         db::get_recent_turns(&conn, &session_id, 1)
     };
+    // Reopening the main window must hydrate the existing session rather than greet again.
+    if !turns_today.is_empty() {
+        publish_transcript(&state, &app, &project_id, &session_id, false)?;
+        return Ok(());
+    }
+    publish_transcript(&state, &app, &project_id, &session_id, true)?;
 
-    let greeting_instruction = if turns_today.is_empty() {
+    let greeting_instruction =
         "Send a brief, warm greeting to the user — just one or two sentences. \
-         Be natural, not overly cheerful. Don't ask multiple questions at once."
-    } else {
-        "Welcome the user back with one warm sentence. Keep it short."
-    };
+         Be natural, not overly cheerful. Don't ask multiple questions at once.";
 
     let messages = vec![
         ChatMessage {
@@ -429,6 +530,7 @@ pub async fn get_greeting(
         },
     ];
 
+    let generation_timer = crate::telemetry::timing::StageTimer::start("generation");
     let stream_result = crate::llm::client::stream_chat(
         &app,
         &endpoint,
@@ -436,14 +538,36 @@ pub async fn get_greeting(
         messages,
         &cancellation,
         &project_id,
+        turn.id(),
     )
-    .await
-    .map_err(|e| {
+    .await;
+    let timing = generation_timer.finish();
+    tracing::info!(
+        stage = timing.stage.as_str(),
+        duration_ms = timing.duration_ms,
+        outcome = if stream_result.is_err() {
+            "failed"
+        } else if stream_result.as_ref().is_ok_and(|result| result.cancelled) {
+            "cancelled"
+        } else {
+            "completed"
+        },
+        "voice stage elapsed"
+    );
+    let stream_result = stream_result.map_err(|e| {
+        state.conversation.fail(e.to_string());
+        let _ = app.emit("conversation:snapshot", state.conversation.snapshot());
         let _ = app.emit("chat:error", ProjectEvent::new(&project_id, e.to_string()));
         e.to_string()
     })?;
 
     if stream_result.cancelled {
+        if !stream_result.content.is_empty() {
+            let conn = state.db.lock().map_err(|e| e.to_string())?;
+            db::save_turn(&conn, &session_id, "assistant", &stream_result.content)
+                .map_err(|e| e.to_string())?;
+        }
+        publish_transcript(&state, &app, &project_id, &session_id, false)?;
         let _ = app.emit("chat:cancelled", ProjectEvent::new(&project_id, turn.id()));
         return Ok(());
     }
@@ -456,6 +580,7 @@ pub async fn get_greeting(
     }
 
     let _ = app.emit("chat:done", ProjectEvent::new(&project_id, ()));
+    publish_transcript(&state, &app, &project_id, &session_id, false)?;
 
     if !piper_voice.is_empty() {
         let speed = voice_speed.parse::<f32>().unwrap_or(1.0);
@@ -463,7 +588,7 @@ pub async fn get_greeting(
         let app_clone = app.clone();
         tokio::spawn(async move {
             let _scope_lease = turn;
-            let _ = crate::tts::piper::speak(
+            let _ = crate::tts::piper::speak_at_epoch(
                 &app_clone,
                 &piper_binary,
                 &piper_voice,
@@ -472,6 +597,7 @@ pub async fn get_greeting(
                 expr,
                 &kokoro_model,
                 &kokoro_voices,
+                speech_epoch,
             )
             .await;
         });
@@ -481,9 +607,17 @@ pub async fn get_greeting(
 }
 
 #[tauri::command]
-pub fn start_new_session(state: State<'_, AppState>) -> Result<String, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
-    db::create_session(&conn).map_err(|e| e.to_string())
+pub fn start_new_session(state: State<'_, AppState>, app: AppHandle) -> Result<String, String> {
+    let _lease = state.conversation.begin()?;
+    let (project_id, session_id) = {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        (
+            db::selected_project_id(&conn),
+            db::create_session(&conn).map_err(|e| e.to_string())?,
+        )
+    };
+    publish_transcript(&state, &app, &project_id, &session_id, false)?;
+    Ok(session_id)
 }
 
 #[derive(Debug, Serialize)]
@@ -494,8 +628,16 @@ pub struct CancellationResponse {
 
 #[tauri::command]
 pub fn stop_speaking(state: State<'_, AppState>) -> CancellationResponse {
+    let generation = state.conversation.cancel_active();
+    if let Ok(recording) = state.recording.lock() {
+        if let Some(recording) = recording.as_ref() {
+            recording
+                .stop_flag
+                .store(true, std::sync::atomic::Ordering::Release);
+        }
+    }
     CancellationResponse {
-        generation: state.conversation.cancel_active(),
+        generation,
         playback: crate::tts::playback::global().stop(),
     }
 }
@@ -503,8 +645,26 @@ pub fn stop_speaking(state: State<'_, AppState>) -> CancellationResponse {
 #[tauri::command]
 pub fn get_conversation_snapshot(
     state: State<'_, AppState>,
-) -> crate::conversation::controller::ConversationSnapshot {
-    state.conversation.snapshot()
+    app: AppHandle,
+) -> Result<crate::conversation::controller::ConversationSnapshot, String> {
+    // Admission lock keeps workspace/session selection and hydration atomic with new turns.
+    let snapshot = state.conversation.snapshot();
+    if snapshot.generating {
+        return Ok(snapshot);
+    }
+    if let Ok(_lease) = state.conversation.begin() {
+        let (project_id, session_id) = {
+            let conn = state.db.lock().map_err(|e| e.to_string())?;
+            (
+                db::selected_project_id(&conn),
+                db::ensure_session(&conn).map_err(|e| e.to_string())?,
+            )
+        };
+        if snapshot.project_id != project_id || snapshot.session_id != session_id {
+            publish_transcript(&state, &app, &project_id, &session_id, false)?;
+        }
+    }
+    Ok(state.conversation.snapshot())
 }
 
 #[tauri::command]
@@ -514,6 +674,8 @@ pub async fn speak_text(
     text: String,
     voice: String,
 ) -> Result<(), String> {
+    let speech_epoch = crate::tts::playback::global().epoch();
+    let _turn = state.conversation.begin()?.with_events(app.clone());
     let (piper_binary, speed, expr, kokoro_model, kokoro_voices) = {
         let conn = state.db.lock().map_err(|e| e.to_string())?;
         let binary = db::get_setting(&conn, "piper_binary").unwrap_or_default();
@@ -529,7 +691,7 @@ pub async fn speak_text(
             kv,
         )
     };
-    crate::tts::piper::speak(
+    crate::tts::piper::speak_at_epoch(
         &app,
         &piper_binary,
         &voice,
@@ -538,6 +700,7 @@ pub async fn speak_text(
         expr,
         &kokoro_model,
         &kokoro_voices,
+        speech_epoch,
     )
     .await
     .map_err(|e| e.to_string())

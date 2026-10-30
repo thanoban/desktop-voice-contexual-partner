@@ -1,4 +1,5 @@
-import { useEffect, useCallback } from "react";
+import { createVoiceInteraction } from "@/lib/voiceInteraction";
+import { useEffect, useCallback, useRef } from "react";
 import { useChatStore } from "@/store/chatStore";
 import { useSettingsStore } from "@/store/settingsStore";
 import { startListening, stopListening, stopSpeaking, sendMessage, onPttToggle } from "@/lib/tauri";
@@ -14,8 +15,6 @@ export function VoiceButton({ disabled, voiceReady = true, onNeedsSetup }: Props
   const isListening  = useChatStore((s) => s.isListening);
   const isProcessing = useChatStore((s) => s.isProcessing);
   const isSpeaking   = useChatStore((s) => s.isSpeaking);
-  const setListening  = useChatStore((s) => s.setListening);
-  const setProcessing = useChatStore((s) => s.setProcessing);
   const addMessage    = useChatStore((s) => s.addMessage);
 
   const state: "idle" | "listening" | "processing" | "speaking" = isSpeaking
@@ -25,47 +24,20 @@ export function VoiceButton({ disabled, voiceReady = true, onNeedsSetup }: Props
     : "idle";
 
   // ── Toggle: click once to start, click again to stop & send ──────────────
+  const interaction = useRef(createVoiceInteraction());
   const handleToggle = useCallback(async () => {
-    if (disabled) return;
-
-    // Interrupt TTS if speaking
-    if (isSpeaking) {
-      return;
-    }
-
-    if (isProcessing) {
-      await stopSpeaking().catch(() => null);
-      return;
-    }
-
-    if (!isListening) {
-      // ── Start ──
-      if (!voiceReady) { onNeedsSetup?.(); return; }
-      setListening(true);
-      try {
-        await startListening();
-      } catch (e) {
-        setListening(false);
-        addMessage({ role: "assistant", content: `[Voice setup needed: ${e}]` });
-      }
-    } else {
-      // ── Stop & send ──
-      setListening(false);
-      setProcessing(true);
-      try {
-        const transcript = await stopListening();
-        if (useSettingsStore.getState().settings.selected_project_id !== projectId) return;
-        if (!transcript?.trim()) { setProcessing(false); return; }
-        const text = transcript.trim();
-        addMessage({ role: "user", content: text });
-        await sendMessage(text, projectId);
-      } catch (e) {
-        if (useSettingsStore.getState().settings.selected_project_id !== projectId) return;
-        addMessage({ role: "assistant", content: `[Error: ${e}]` });
-        setProcessing(false);
-      }
-    }
-  }, [disabled, isListening, isProcessing, isSpeaking, voiceReady, onNeedsSetup, setListening, setProcessing, addMessage, projectId]);
+    try {
+      await interaction.current({
+        state: useChatStore.getState,
+        disabled: !!disabled,
+        start: async () => { if (!voiceReady) { onNeedsSetup?.(); return; } await startListening(); },
+        stop: stopListening,
+        cancel: stopSpeaking,
+        send: (text) => sendMessage(text, projectId),
+        isCurrentProject: () => useSettingsStore.getState().settings.selected_project_id === projectId,
+      });
+    } catch (error) { if (useSettingsStore.getState().settings.selected_project_id === projectId) addMessage({ role: "assistant", content: `[Error: ${error}]` }); }
+  }, [disabled, voiceReady, onNeedsSetup, addMessage, projectId]);
 
   // ── Space bar toggle (window focused) ────────────────────────────────────
   useEffect(() => {
@@ -99,14 +71,15 @@ export function VoiceButton({ disabled, voiceReady = true, onNeedsSetup }: Props
     idle:       disabled ? "Ollama not running" : "Press Space to Speak",
     listening:  "Listening… press Space to send",
     processing: "Thinking… tap to stop",
-    speaking:   "Speaking…",
+    speaking:   "Speaking… press Space to stop",
   };
+  const interactionDisabled = !!disabled && state === "idle";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "10px" }}>
       <button
         onClick={handleToggle}
-        disabled={disabled || isSpeaking}
+        disabled={interactionDisabled}
         type="button"
         style={{
           width: "72px",
@@ -114,14 +87,14 @@ export function VoiceButton({ disabled, voiceReady = true, onNeedsSetup }: Props
           borderRadius: "50%",
           background: colors[state],
           border: `2px solid ${state === "idle" ? "var(--text-dim)" : colors[state]}`,
-          cursor: disabled || isSpeaking ? "not-allowed" : "pointer",
+          cursor: interactionDisabled ? "not-allowed" : "pointer",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           fontSize: "28px",
           transition: "all 0.15s ease",
           transform: isListening ? "scale(1.08)" : "scale(1)",
-          opacity: disabled ? 0.4 : 1,
+          opacity: interactionDisabled ? 0.4 : 1,
         }}
         className={state === "idle" ? "animate-pulse-glow" : ""}
         aria-label={labels[state]}

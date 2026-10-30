@@ -1,4 +1,4 @@
-import { useCallback, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useCallback, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { sendMessage, stopSpeaking } from "@/lib/tauri";
 import { useChatStore } from "@/store/chatStore";
 import { useSettingsStore } from "@/store/settingsStore";
@@ -11,24 +11,27 @@ export function Composer({ disabled = false }: Props) {
   const projectId = useSettingsStore((state) => state.settings.selected_project_id);
   const [draft, setDraft] = useState("");
   const isProcessing = useChatStore((state) => state.isProcessing);
+  const captureOrPlayback = useChatStore((state) => state.isListening || state.isSpeaking);
+  const draftRevision = useRef(0);
   const addMessage = useChatStore((state) => state.addMessage);
-  const setProcessing = useChatStore((state) => state.setProcessing);
 
+  const pendingSubmit = useRef(false);
   const submit = useCallback(async () => {
     const content = draft.trim();
-    if (!content || disabled || isProcessing) return;
+    const active = useChatStore.getState();
+    if (!content || disabled || pendingSubmit.current || active.isProcessing || active.isListening || active.isSpeaking) return;
+    pendingSubmit.current = true;
 
-    setDraft("");
-    addMessage({ role: "user", content });
-    setProcessing(true);
+    const submittedRevision = draftRevision.current;
     try {
       await sendMessage(content, projectId);
+      // Retain rejected submissions and any edits made while this request ran.
+      if (draftRevision.current === submittedRevision) setDraft("");
     } catch (error) {
       if (useSettingsStore.getState().settings.selected_project_id !== projectId) return;
       addMessage({ role: "assistant", content: `[Error: ${String(error)}]` });
-      setProcessing(false);
-    }
-  }, [addMessage, disabled, draft, isProcessing, setProcessing, projectId]);
+    } finally { pendingSubmit.current = false; }
+  }, [addMessage, disabled, draft, isProcessing, projectId]);
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -60,7 +63,7 @@ export function Composer({ disabled = false }: Props) {
     >
       <textarea
         value={draft}
-        onChange={(event) => setDraft(event.target.value)}
+        onChange={(event) => { draftRevision.current++; setDraft(event.target.value); }}
         onKeyDown={handleKeyDown}
         disabled={disabled}
         rows={1}
@@ -85,7 +88,7 @@ export function Composer({ disabled = false }: Props) {
       <button
         type={isProcessing ? "button" : "submit"}
         onClick={isProcessing ? cancel : undefined}
-        disabled={disabled || (!isProcessing && !draft.trim())}
+        disabled={!isProcessing && (disabled || captureOrPlayback || !draft.trim())}
         aria-label={isProcessing ? "Stop generating" : "Send message"}
         style={{
           height: "38px",
@@ -95,8 +98,8 @@ export function Composer({ disabled = false }: Props) {
           background: "var(--accent)",
           color: "white",
           fontWeight: 600,
-          cursor: disabled || (!isProcessing && !draft.trim()) ? "not-allowed" : "pointer",
-          opacity: disabled || (!isProcessing && !draft.trim()) ? 0.45 : 1,
+          cursor: !isProcessing && (disabled || captureOrPlayback || !draft.trim()) ? "not-allowed" : "pointer",
+          opacity: !isProcessing && (disabled || captureOrPlayback || !draft.trim()) ? 0.45 : 1,
         }}
       >
         {isProcessing ? "Stop" : "Send"}

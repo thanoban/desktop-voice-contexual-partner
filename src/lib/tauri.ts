@@ -99,6 +99,14 @@ export interface CancellationResponse {
 }
 
 export interface ConversationSnapshot {
+  revision: number;
+  project_id: string;
+  session_id: string;
+  messages: Array<{ id: string; role: "user" | "assistant"; content: string; timestamp: number }>;
+  streaming_content: string;
+  generating: boolean;
+  audio: { listening: boolean; transcribing: boolean; speaking: boolean };
+  error: string | null;
   active_turn_id?: string | null;
   cancellation_requested: boolean;
 }
@@ -108,6 +116,9 @@ export const stopSpeaking = (): Promise<CancellationResponse> =>
 
 export const getConversationSnapshot = (): Promise<ConversationSnapshot> =>
   invoke("get_conversation_snapshot");
+
+export const onConversationSnapshot = (cb: (snapshot: ConversationSnapshot) => void): Promise<UnlistenFn> =>
+  listen<ConversationSnapshot>("conversation:snapshot", (event) => cb(event.payload));
 
 // ── Voice input commands (M1) ─────────────────────────────────────────────────
 

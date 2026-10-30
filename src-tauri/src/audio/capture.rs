@@ -56,6 +56,7 @@ pub fn start_recording(device_name: &str, wav_path: PathBuf) -> Result<Recording
 
     let max_samples = sample_rate as usize * MAX_RECORDING_SECONDS;
     let limit_stop = Arc::clone(&stop_flag);
+    let stream_error = Arc::new(Mutex::new(None));
 
     std::thread::spawn(move || {
         let result = (|| -> Result<()> {
@@ -68,6 +69,7 @@ pub fn start_recording(device_name: &str, wav_path: PathBuf) -> Result<Recording
                     Arc::clone(&samples_clone),
                     max_samples,
                     Arc::clone(&limit_stop),
+                    Arc::clone(&stream_error),
                 )?,
                 cpal::SampleFormat::I16 => build_stream::<i16>(
                     &device,
@@ -76,6 +78,7 @@ pub fn start_recording(device_name: &str, wav_path: PathBuf) -> Result<Recording
                     Arc::clone(&samples_clone),
                     max_samples,
                     Arc::clone(&limit_stop),
+                    Arc::clone(&stream_error),
                 )?,
                 cpal::SampleFormat::U16 => build_stream::<u16>(
                     &device,
@@ -84,6 +87,7 @@ pub fn start_recording(device_name: &str, wav_path: PathBuf) -> Result<Recording
                     Arc::clone(&samples_clone),
                     max_samples,
                     Arc::clone(&limit_stop),
+                    Arc::clone(&stream_error),
                 )?,
                 format => return Err(anyhow!("Unsupported input sample format: {format:?}")),
             };
@@ -93,6 +97,14 @@ pub fn start_recording(device_name: &str, wav_path: PathBuf) -> Result<Recording
                 std::thread::sleep(Duration::from_millis(20));
             }
             drop(stream);
+
+            if let Some(error) = stream_error
+                .lock()
+                .map_err(|_| anyhow!("Audio error lock failed"))?
+                .take()
+            {
+                return Err(anyhow!("Audio stream error: {error}"));
+            }
 
             let buf = samples
                 .lock()
@@ -119,11 +131,13 @@ fn build_stream<T>(
     samples: Arc<Mutex<Vec<f32>>>,
     max_samples: usize,
     stop_flag: Arc<AtomicBool>,
+    stream_error: Arc<Mutex<Option<String>>>,
 ) -> Result<cpal::Stream>
 where
     T: cpal::Sample + cpal::SizedSample,
     f32: cpal::FromSample<T>,
 {
+    let error_stop = Arc::clone(&stop_flag);
     device
         .build_input_stream(
             config,
@@ -145,10 +159,17 @@ where
                     buffer.push(mono);
                 }
             },
-            |error| tracing::error!("Audio stream error: {}", error),
+            move |error| report_stream_failure(&error_stop, &stream_error, error.to_string()),
             None,
         )
         .map_err(Into::into)
+}
+
+fn report_stream_failure(stop: &AtomicBool, failure: &Mutex<Option<String>>, message: String) {
+    if let Ok(mut failure) = failure.lock() {
+        failure.get_or_insert(message);
+    }
+    stop.store(true, Ordering::Release);
 }
 
 fn find_config(device: &cpal::Device) -> Result<cpal::SupportedStreamConfig> {
@@ -214,6 +235,31 @@ fn resample(samples: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
 #[cfg(test)]
 mod tests {
     use super::resample;
+
+    #[test]
+    fn device_failure_releases_worker_with_original_error() {
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let failure = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let worker_stop = stop.clone();
+        let worker_failure = failure.clone();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            while !worker_stop.load(std::sync::atomic::Ordering::Acquire) {
+                std::thread::yield_now();
+            }
+            sender.send(worker_failure.lock().unwrap().clone()).unwrap();
+        });
+        super::report_stream_failure(&stop, &failure, "Device disconnected".into());
+        super::report_stream_failure(&stop, &failure, "Later driver error".into());
+        assert_eq!(
+            receiver
+                .recv_timeout(std::time::Duration::from_secs(1))
+                .unwrap()
+                .as_deref(),
+            Some("Device disconnected")
+        );
+        worker.join().unwrap();
+    }
 
     #[test]
     fn resample_empty_input_is_empty() {

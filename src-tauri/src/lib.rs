@@ -201,7 +201,9 @@ pub fn run() {
                 .on_shortcut(ptt, |app_handle, _shortcut, event| {
                     if event.state == ShortcutState::Pressed {
                         show_window(app_handle);
-                        let _ = app_handle.emit("shortcut:ptt:toggle", ());
+                        // The shortcut opens main; dispatch there once rather than
+                        // making both main and the hidden widget toggle recording.
+                        let _ = app_handle.emit_to("main", "shortcut:ptt:toggle", ());
                     }
                 })?;
 

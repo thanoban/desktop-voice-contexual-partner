@@ -1,4 +1,6 @@
-import { useCallback, useEffect } from "react";
+import { createVoiceInteraction } from "@/lib/voiceInteraction";
+import { useCallback, useEffect, useRef } from "react";
+import { useConversationSync } from "@/lib/useConversationSync";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useChatStore } from "@/store/chatStore";
 import { useOllamaStore } from "@/store/ollamaStore";
@@ -6,15 +8,10 @@ import { useSettingsStore } from "@/store/settingsStore";
 import {
   startListening,
   stopListening,
+  stopSpeaking,
   sendMessage,
   expandToMain,
   onPttToggle,
-  onChatToken,
-  onChatDone,
-  onChatError,
-  onChatCancelled,
-  onSpeakStart,
-  onSpeakEnd,
 } from "@/lib/tauri";
 
 export function Widget() {
@@ -26,59 +23,33 @@ export function Widget() {
     isListening,
     isProcessing,
     isSpeaking,
-    setListening,
-    setProcessing,
-    setSpeaking,
-    appendToken,
-    finalizeStream,
-    addMessage,
   } = useChatStore();
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { const stop = startPolling(); return stop; }, [startPolling]);
 
-  // Wire chat events so status text stays live
-  useEffect(() => {
-    const uns: Array<() => void> = [];
-    let disposed = false;
-    Promise.all([
-      onChatToken(settings.selected_project_id, (t) => { if (!disposed) appendToken(t); }),
-      onChatDone(settings.selected_project_id, () => { if (!disposed) { finalizeStream(); setProcessing(false); } }),
-      onChatError(settings.selected_project_id, () => { if (!disposed) setProcessing(false); }),
-      onChatCancelled(settings.selected_project_id, () => { if (!disposed) { finalizeStream(); setProcessing(false); } }),
-      onSpeakStart(() => { if (!disposed) setSpeaking(true); }),
-      onSpeakEnd(() => { if (!disposed) setSpeaking(false); }),
-    ]).then((fns) => { if (disposed) fns.forEach((fn) => fn()); else uns.push(...fns); });
-    return () => { disposed = true; uns.forEach((f) => f()); };
-  }, [appendToken, finalizeStream, setProcessing, setSpeaking, settings.selected_project_id]);
+  useConversationSync(settings.selected_project_id);
 
   // ── Toggle: click/Space once to start, again to stop & send ─────────────
 
+  const interaction = useRef(createVoiceInteraction());
   const handleToggle = useCallback(async () => {
-    if (ollamaStatus !== "connected") return;
-    if (isProcessing) return;
-    if (!isListening) {
-      setListening(true);
-      try {
-        await startListening();
-      } catch {
-        setListening(false);
-      }
-    } else {
-      setListening(false);
-      setProcessing(true);
-      try {
-        const text = (await stopListening()).trim();
-        if (useSettingsStore.getState().settings.selected_project_id !== settings.selected_project_id) return;
-        if (!text) { setProcessing(false); return; }
-        addMessage({ role: "user", content: text });
-        await sendMessage(text, settings.selected_project_id);
-      } catch {
-        if (useSettingsStore.getState().settings.selected_project_id !== settings.selected_project_id) return;
-        setProcessing(false);
+    try {
+      await interaction.current({
+        state: useChatStore.getState,
+        disabled: ollamaStatus !== "connected",
+        start: startListening,
+        stop: stopListening,
+        cancel: stopSpeaking,
+        send: (text) => sendMessage(text, settings.selected_project_id),
+        isCurrentProject: () => useSettingsStore.getState().settings.selected_project_id === settings.selected_project_id,
+      });
+    } catch (error) {
+      if (useSettingsStore.getState().settings.selected_project_id === settings.selected_project_id) {
+        useChatStore.getState().addMessage({ role: "assistant", content: `[Error: ${String(error)}]` });
       }
     }
-  }, [isListening, isProcessing, setListening, setProcessing, addMessage, ollamaStatus, settings.selected_project_id]);
+  }, [ollamaStatus, settings.selected_project_id]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -168,8 +139,8 @@ export function Widget() {
       <button
         type="button"
         onClick={handleToggle}
-        aria-label={isListening ? "Click to stop" : "Click to speak"}
-        title={isListening ? "Click to stop & send (Space)" : "Click to speak (Space)"}
+        aria-label={isSpeaking || isProcessing ? "Stop response" : isListening ? "Finish recording" : "Speak"}
+        title={isSpeaking || isProcessing ? "Stop response (Space)" : isListening ? "Click to stop & send (Space)" : "Click to speak (Space)"}
         style={{
           width: "28px",
           height: "28px",
@@ -188,7 +159,7 @@ export function Widget() {
       >
         {isProcessing
           ? <span className="animate-spin" style={{ fontSize: "11px" }}>⟳</span>
-          : "🎙"}
+          : isSpeaking ? "✕" : "🎙"}
       </button>
 
       {/* Expand to full window */}

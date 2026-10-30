@@ -62,7 +62,7 @@ function StreamingTurn({ companionName }: { companionName: string }) {
           userSelect: "text",
           border: "1px solid rgba(255,255,255,0.04)",
         }}
-        className={content ? "cursor-blink" : ""}
+        className={isStreaming && content ? "cursor-blink" : ""}
       >
         {content || <span style={{ color: "var(--text-muted)" }}>thinking…</span>}
       </div>
@@ -72,6 +72,7 @@ function StreamingTurn({ companionName }: { companionName: string }) {
 
 export function Transcript() {
   const messages = useChatStore((s) => s.messages);
+  const streamingContent = useChatStore((s) => s.streamingContent);
   const isStreaming = useChatStore((s) => s.isStreaming);
   const isProcessing = useChatStore((s) => s.isProcessing);
   const companionName = useSettingsStore((s) => s.settings.companion_name);
@@ -95,7 +96,7 @@ export function Transcript() {
         paddingBottom: "8px",
       }}
     >
-      {messages.length === 0 && !showThinking && !isStreaming && (
+      {messages.length === 0 && !showThinking && !isStreaming && !streamingContent && (
         <div
           style={{
             flex: 1,
@@ -140,7 +141,7 @@ export function Transcript() {
         <Turn key={m.id} msg={m} companionName={companionName} />
       ))}
 
-      {(isStreaming || showThinking) && (
+      {(isStreaming || showThinking || !!streamingContent) && (
         <StreamingTurn companionName={companionName} />
       )}
 

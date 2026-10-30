@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use std::process::Command;
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
 
 // Inline Python script executed via `python -c`. Uses only stdlib + kokoro_onnx + numpy.
 const KOKORO_SCRIPT: &str = r#"
@@ -29,6 +29,7 @@ pub async fn speak_kokoro(
     voice_name: &str,
     text: &str,
     speed: f32,
+    epoch: u64,
 ) -> Result<()> {
     if model_path.is_empty() || voices_path.is_empty() {
         return Err(anyhow!(
@@ -37,9 +38,8 @@ pub async fn speak_kokoro(
         ));
     }
 
-    let epoch = super::playback::global().epoch();
-    let _ = app.emit("tts:start", ());
     let out_file = super::temp_wav_path();
+    let _file = super::SpeechFile(out_file.clone());
     let speed_str = format!("{:.2}", speed.clamp(0.5, 2.0));
 
     // Split text into words as separate argv entries to avoid shell quoting issues
@@ -68,7 +68,6 @@ pub async fn speak_kokoro(
     if let Some(status) = &status {
         if !status.success() {
             let _ = std::fs::remove_file(&out_file);
-            let _ = app.emit("tts:end", ());
             return Err(anyhow!(
                 "Kokoro TTS failed. Ensure kokoro-onnx is installed: pip install kokoro-onnx"
             ));

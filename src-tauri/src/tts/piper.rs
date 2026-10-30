@@ -2,14 +2,13 @@ use anyhow::{anyhow, Result};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use tauri::AppHandle;
-use tauri::Emitter;
 
 /// Speaks `text` using the appropriate TTS engine based on the `voice` prefix:
 ///   `sapi:<Name>`   → Windows System.Speech (SAPI)
 ///   `kokoro:<id>`   → Kokoro TTS via Python subprocess
 ///   anything else   → Piper TTS subprocess
 #[allow(clippy::too_many_arguments)]
-pub async fn speak(
+pub async fn speak_at_epoch(
     app: &AppHandle,
     piper_binary: &str,
     voice: &str,
@@ -18,9 +17,14 @@ pub async fn speak(
     expressiveness: f32,
     kokoro_model: &str,
     kokoro_voices: &str,
+    epoch: u64,
 ) -> Result<()> {
+    if super::playback::global().is_cancelled(epoch) {
+        return Ok(());
+    }
+    let _activity = super::SpeechActivity::begin(app)?;
     if let Some(sapi_name) = voice.strip_prefix("sapi:") {
-        return speak_sapi(app, sapi_name, text).await;
+        return speak_sapi(app, sapi_name, text, epoch).await;
     }
     if let Some(kokoro_id) = voice.strip_prefix("kokoro:") {
         return super::kokoro::speak_kokoro(
@@ -30,6 +34,7 @@ pub async fn speak(
             kokoro_id,
             text,
             speed,
+            epoch,
         )
         .await;
     }
@@ -37,9 +42,7 @@ pub async fn speak(
     let binary = resolve_binary(piper_binary)?;
     let voice_path = resolve_voice(voice)?;
     let out_file = super::temp_wav_path();
-    let epoch = super::playback::global().epoch();
-
-    let _ = app.emit("tts:start", ());
+    let _file = super::SpeechFile(out_file.clone());
 
     let speed_str = format!("{:.3}", speed.clamp(0.3, 3.0));
     let expr_str = format!("{:.3}", expressiveness.clamp(0.0, 1.0));
@@ -66,7 +69,7 @@ pub async fn speak(
 /// Plays the synthesized file unless speech was cancelled, then always cleans up and
 /// announces the end of speech.
 pub(crate) fn finish(
-    app: &AppHandle,
+    _app: &AppHandle,
     out_file: &std::path::Path,
     synthesized: bool,
     epoch: u64,
@@ -77,7 +80,6 @@ pub(crate) fn finish(
         Ok(())
     };
     let _ = std::fs::remove_file(out_file);
-    let _ = app.emit("tts:end", ());
     result
 }
 
@@ -115,17 +117,16 @@ pub fn get_sapi_voices() -> Vec<String> {
 // ── SAPI speech ───────────────────────────────────────────────────────────────
 
 #[cfg(target_os = "windows")]
-async fn speak_sapi(app: &AppHandle, voice_name: &str, text: &str) -> Result<()> {
-    let epoch = super::playback::global().epoch();
-    let _ = app.emit("tts:start", ());
+async fn speak_sapi(app: &AppHandle, voice_name: &str, text: &str, epoch: u64) -> Result<()> {
     let out_file = super::temp_wav_path();
+    let _file = super::SpeechFile(out_file.clone());
 
     let safe_name = voice_name.replace('\'', "''");
     let safe_text = text.replace('\'', "''");
     let wav_path = out_file.to_str().unwrap_or("").to_string();
 
     let script = format!(
-        "Add-Type -AssemblyName System.Speech; \
+        "$ErrorActionPreference = 'Stop'; Add-Type -AssemblyName System.Speech; \
          $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; \
          $s.SelectVoice('{safe_name}'); \
          $s.SetOutputToWaveFile('{wav_path}'); \
@@ -140,7 +141,7 @@ async fn speak_sapi(app: &AppHandle, voice_name: &str, text: &str) -> Result<()>
 }
 
 #[cfg(not(target_os = "windows"))]
-async fn speak_sapi(_app: &AppHandle, _voice_name: &str, _text: &str) -> Result<()> {
+async fn speak_sapi(_app: &AppHandle, _voice_name: &str, _text: &str, _epoch: u64) -> Result<()> {
     Err(anyhow!("Windows SAPI TTS is only available on Windows"))
 }
 

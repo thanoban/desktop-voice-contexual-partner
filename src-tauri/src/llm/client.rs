@@ -3,6 +3,7 @@ use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 use tauri::Emitter;
+use tauri::Manager;
 
 use crate::conversation::controller::CancellationToken;
 use crate::domain::events::ProjectEvent;
@@ -59,6 +60,7 @@ pub async fn stream_chat(
     messages: Vec<ChatMessage>,
     cancellation: &CancellationToken,
     project_id: &str,
+    turn_id: &str,
 ) -> Result<StreamChatResult> {
     let client = build_client()?;
     let url = format!("{}/api/chat", endpoint.trim_end_matches('/'));
@@ -106,7 +108,7 @@ pub async fn stream_chat(
         let Some(chunk) = next else { break };
         let bytes = chunk.map_err(|e| anyhow!("Stream error: {}", e))?;
         for chunk in decoder.push(&bytes)? {
-            terminal = consume_chunk(app, chunk, &mut full_content, project_id)?;
+            terminal = consume_chunk(app, chunk, &mut full_content, project_id, turn_id)?;
             if terminal {
                 break;
             }
@@ -118,7 +120,7 @@ pub async fn stream_chat(
 
     if !terminal {
         for chunk in decoder.finish()? {
-            terminal = consume_chunk(app, chunk, &mut full_content, project_id)?;
+            terminal = consume_chunk(app, chunk, &mut full_content, project_id, turn_id)?;
         }
     }
 
@@ -142,6 +144,7 @@ fn consume_chunk(
     chunk: OllamaChatChunk,
     full_content: &mut String,
     project_id: &str,
+    turn_id: &str,
 ) -> Result<bool> {
     if let Some(error) = chunk.error {
         return Err(anyhow!("Ollama stream error: {}", error));
@@ -149,6 +152,9 @@ fn consume_chunk(
     if let Some(message) = chunk.message {
         if !message.content.is_empty() {
             full_content.push_str(&message.content);
+            let state = app.state::<crate::AppState>();
+            state.conversation.append(turn_id, &message.content);
+            let _ = app.emit("conversation:snapshot", state.conversation.snapshot());
             let _ = app.emit(
                 "chat:token",
                 ProjectEvent::new(project_id, &message.content),
