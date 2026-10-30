@@ -1,5 +1,12 @@
 import { useEffect, useState } from "react";
-import { listSessions, getSessionTurns, type SessionInfo, type TurnInfo } from "@/lib/tauri";
+import {
+  listSessions,
+  getSessionTurns,
+  deleteSessionHistory,
+  type SessionInfo,
+  type TurnInfo,
+} from "@/lib/tauri";
+import { useSettingsStore } from "@/store/settingsStore";
 
 interface Props {
   open: boolean;
@@ -25,17 +32,39 @@ export function HistoryPanel({ open, onClose }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [turns, setTurns] = useState<TurnInfo[]>([]);
   const [loadingTurns, setLoadingTurns] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [error, setError] = useState("");
+  const projectId = useSettingsStore((state) => state.settings.selected_project_id);
 
   useEffect(() => {
     if (open) {
       listSessions().then(setSessions).catch(() => setSessions([]));
       setSelectedId(null);
       setTurns([]);
+      setConfirmDelete(false);
+      setError("");
     }
-  }, [open]);
+  }, [open, projectId]);
+
+  const handleDelete = async () => {
+    if (!selectedId) return;
+    try {
+      await deleteSessionHistory(selectedId, projectId);
+    } catch (reason) {
+      setError(String(reason));
+      setConfirmDelete(false);
+      return;
+    }
+    setSessions((list) => list.filter((s) => s.id !== selectedId));
+    setSelectedId(null);
+    setTurns([]);
+    setConfirmDelete(false);
+  };
 
   const selectSession = async (id: string) => {
     setSelectedId(id);
+    setConfirmDelete(false);
+    setError("");
     setLoadingTurns(true);
     try {
       const t = await getSessionTurns(id);
@@ -101,7 +130,7 @@ export function HistoryPanel({ open, onClose }: Props) {
             {selectedId && (
               <button
                 type="button"
-                onClick={() => { setSelectedId(null); setTurns([]); }}
+                onClick={() => { setSelectedId(null); setTurns([]); setConfirmDelete(false); setError(""); }}
                 style={iconBtn}
                 aria-label="Back to sessions"
                 title="Back"
@@ -113,10 +142,44 @@ export function HistoryPanel({ open, onClose }: Props) {
               {selectedId ? "Conversation" : "History"}
             </span>
           </div>
-          <button type="button" onClick={onClose} style={iconBtn} aria-label="Close history">
-            ✕
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            {selectedId && (confirmDelete ? (
+              <>
+                <button type="button" onClick={() => setConfirmDelete(false)} style={smallBtn}>
+                  Cancel
+                </button>
+                <button type="button" onClick={handleDelete} style={{ ...smallBtn, ...dangerTone }}>
+                  Delete conversation
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(true)}
+                style={smallBtn}
+                title="Delete this conversation's history"
+              >
+                Delete…
+              </button>
+            ))}
+            <button type="button" onClick={onClose} style={iconBtn} aria-label="Close history">
+              ✕
+            </button>
+          </div>
         </div>
+        {selectedId && (confirmDelete || error) && (
+          <p
+            role={error ? "alert" : undefined}
+            style={{
+              fontSize: "11px",
+              color: error ? "var(--error)" : "var(--text-muted)",
+              padding: "8px 16px",
+              borderBottom: "1px solid var(--text-dim)",
+            }}
+          >
+            {error || "Permanently deletes this conversation's messages. Memories built from it stay until you forget them in Memories."}
+          </p>
+        )}
 
         {/* Content */}
         <div style={{ flex: 1, overflowY: "auto", padding: "8px 0" }}>
@@ -248,4 +311,20 @@ const iconBtn: React.CSSProperties = {
   cursor: "pointer",
   padding: "4px 8px",
   borderRadius: "4px",
+};
+
+const smallBtn: React.CSSProperties = {
+  background: "transparent",
+  border: "1px solid var(--text-dim)",
+  borderRadius: "6px",
+  color: "var(--text-muted)",
+  fontSize: "11px",
+  padding: "4px 8px",
+  cursor: "pointer",
+};
+
+const dangerTone: React.CSSProperties = {
+  background: "rgba(239,68,68,0.15)",
+  border: "1px solid rgba(239,68,68,0.4)",
+  color: "#f87171",
 };

@@ -1,5 +1,14 @@
 import { useEffect, useState } from "react";
-import { getMemories, deleteMemory, forgetAll, type Memory } from "@/lib/tauri";
+import {
+  getMemoryRecords,
+  deleteMemory,
+  forgetAll,
+  getRetentionSettings,
+  setRetentionSettings,
+  purgeExpiredData,
+  type MemoryRecord,
+  type RetentionSettings,
+} from "@/lib/tauri";
 import { useSettingsStore } from "@/store/settingsStore";
 
 interface Props {
@@ -10,18 +19,31 @@ interface Props {
 export function MemoryPanel({ open, onClose }: Props) {
   const projectId = useSettingsStore((state) => state.settings.selected_project_id);
   const [error, setError] = useState("");
-  const [memories, setMemories] = useState<Memory[]>([]);
+  const [memories, setMemories] = useState<MemoryRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [confirmForget, setConfirmForget] = useState(false);
+  const [retention, setRetention] = useState<RetentionSettings | null>(null);
+  const [draft, setDraft] = useState<RetentionSettings>({ memory_days: 0, history_days: 0 });
+  const [confirmRetention, setConfirmRetention] = useState(false);
+  const [retentionNote, setRetentionNote] = useState("");
 
-  useEffect(() => {
-    if (!open) return;
+  const reload = () => {
     setLoading(true);
-    getMemories()
+    getMemoryRecords()
       .then(setMemories)
       .catch((reason) => setError(String(reason)))
       .finally(() => setLoading(false));
-  }, [open]);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    reload();
+    setRetentionNote("");
+    setConfirmRetention(false);
+    getRetentionSettings()
+      .then((value) => { setRetention(value); setDraft(value); })
+      .catch((reason) => setError(String(reason)));
+  }, [open, projectId]);
 
   if (!open) return null;
 
@@ -29,6 +51,25 @@ export function MemoryPanel({ open, onClose }: Props) {
     try { await deleteMemory(id, projectId); }
     catch (reason) { setError(String(reason)); return; }
     setMemories((m) => m.filter((x) => x.id !== id));
+  };
+
+  const retentionChanged = retention !== null
+    && (draft.memory_days !== retention.memory_days || draft.history_days !== retention.history_days);
+
+  const handleApplyRetention = async () => {
+    try {
+      const saved = await setRetentionSettings(draft.memory_days, draft.history_days);
+      setRetention(saved);
+      setDraft(saved);
+      const report = await purgeExpiredData();
+      setRetentionNote(
+        `Saved. Deleted ${report.memories_deleted} memories and ${report.sessions_deleted} conversations past the limit.`,
+      );
+      reload();
+    } catch (reason) {
+      setError(String(reason));
+    }
+    setConfirmRetention(false);
   };
 
   const handleForgetAll = async () => {
@@ -115,7 +156,10 @@ export function MemoryPanel({ open, onClose }: Props) {
                   {m.content}
                 </p>
                 <p style={{ fontSize: "10px", color: "var(--text-muted)", marginTop: "4px" }}>
-                  {formatAge(m.created_at)} · {m.memory_type.replace("_", " ")}
+                  {formatAge(m.created_at)} · {m.memory_type.replace("_", " ")} ·{" "}
+                  {m.embedding_model
+                    ? `${m.embedding_model} (${m.embedding_dim ?? "?"}d)`
+                    : "keyword search only"}
                 </p>
               </div>
               <button
@@ -128,6 +172,49 @@ export function MemoryPanel({ open, onClose }: Props) {
               </button>
             </div>
           ))}
+        </div>
+
+        {/* Retention */}
+        <div style={{ padding: "12px 16px", borderTop: "1px solid var(--text-dim)", flexShrink: 0 }}>
+          <p style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-primary)", marginBottom: "6px" }}>
+            Retention <span style={{ fontWeight: 400, color: "var(--text-muted)" }}>· all workspaces · 0 = keep forever</span>
+          </p>
+          <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+            <RetentionInput
+              label="Memories (days)"
+              value={draft.memory_days}
+              onChange={(memory_days) => setDraft((d) => ({ ...d, memory_days }))}
+            />
+            <RetentionInput
+              label="Conversation history (days)"
+              value={draft.history_days}
+              onChange={(history_days) => setDraft((d) => ({ ...d, history_days }))}
+            />
+            {confirmRetention ? (
+              <>
+                <button type="button" onClick={() => setConfirmRetention(false)} style={secondaryBtn}>
+                  Cancel
+                </button>
+                <button type="button" onClick={handleApplyRetention} style={dangerBtn}>
+                  Save and delete expired
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                disabled={!retentionChanged}
+                onClick={() => setConfirmRetention(true)}
+                style={{ ...secondaryBtn, opacity: retentionChanged ? 1 : 0.5 }}
+              >
+                Save…
+              </button>
+            )}
+          </div>
+          <p style={{ fontSize: "10px", color: "var(--text-muted)", marginTop: "6px" }}>
+            {confirmRetention
+              ? "Memories and conversations older than these limits are deleted now and at every startup. Documents are kept until you remove them."
+              : retentionNote || "Expired items are deleted at startup. Documents are kept until you remove them."}
+          </p>
         </div>
 
         {/* Footer */}
@@ -160,6 +247,37 @@ export function MemoryPanel({ open, onClose }: Props) {
         )}
       </div>
     </div>
+  );
+}
+
+function RetentionInput({ label, value, onChange }: {
+  label: string;
+  value: number;
+  onChange: (days: number) => void;
+}) {
+  return (
+    <label style={{ fontSize: "11px", color: "var(--text-muted)", display: "flex", gap: "6px", alignItems: "center" }}>
+      {label}
+      <input
+        type="number"
+        min={0}
+        max={36500}
+        value={value}
+        onChange={(e) => {
+          const days = Math.floor(Number(e.target.value));
+          onChange(Number.isFinite(days) ? Math.min(36500, Math.max(0, days)) : 0);
+        }}
+        style={{
+          width: "64px",
+          background: "var(--bg-elevated)",
+          border: "1px solid var(--text-dim)",
+          borderRadius: "6px",
+          color: "var(--text-primary)",
+          fontSize: "12px",
+          padding: "4px 6px",
+        }}
+      />
+    </label>
   );
 }
 

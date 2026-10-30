@@ -363,3 +363,57 @@ export const getSessionTurns = (sessionId: string): Promise<TurnInfo[]> =>
 
 export const onPttToggle = (cb: () => void): Promise<UnlistenFn> =>
   listen("shortcut:ptt:toggle", () => cb());
+
+// ── Retrieval provenance and retention (S1.7 / S6.1) ─────────────────────────
+
+/** `get_memories` rows with embedding and document provenance. */
+export interface MemoryRecord extends Memory {
+  source_file: string | null;
+  /** Null means the memory is lexical-only (no compatible vector). */
+  embedding_model: string | null;
+  embedding_dim: number | null;
+  document_id: string | null;
+  document_revision: number | null;
+  chunk_index: number | null;
+}
+
+export const getMemoryRecords = (): Promise<MemoryRecord[]> =>
+  invoke("get_memories");
+
+/** `list_documents` rows with stable identity of the active revision. */
+export interface DocumentRecord extends DocumentInfo {
+  document_id: string;
+  revision: number;
+  content_sha256: string | null;
+  embedding_model: string | null;
+  /** Chunks embedded by a model other than the current setting. */
+  incompatible_chunks: number;
+}
+
+export const listDocumentRecords = (): Promise<DocumentRecord[]> =>
+  invoke("list_documents");
+
+/** Day limits; 0 keeps rows forever. */
+export interface RetentionSettings {
+  memory_days: number;
+  history_days: number;
+}
+
+export interface PurgeReport {
+  memories_deleted: number;
+  sessions_deleted: number;
+  turns_deleted: number;
+}
+
+export const getRetentionSettings = (): Promise<RetentionSettings> =>
+  invoke("get_retention_settings");
+
+export const setRetentionSettings = (memoryDays: number, historyDays: number): Promise<RetentionSettings> =>
+  invoke("set_retention_settings", { memoryDays, historyDays });
+
+export const purgeExpiredData = (): Promise<PurgeReport> =>
+  invoke("purge_expired_data");
+
+/** Deletes one past conversation's transcript; derived memories are kept. */
+export const deleteSessionHistory = (sessionId: string, projectId: string): Promise<number> =>
+  invoke("delete_session_history", { sessionId, projectId });
