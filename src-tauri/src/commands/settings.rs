@@ -181,6 +181,11 @@ fn validate_public_setting_key(key: &str) -> Result<(), String> {
     if key.starts_with("_internal.") {
         return Err("Internal state cannot be changed through settings".into());
     }
+    // Provider rows carry routing and credential references; only the
+    // validating provider commands may write them.
+    if key.starts_with("provider.") {
+        return Err("Use the provider settings to change AI providers".into());
+    }
     Ok(())
 }
 
@@ -224,6 +229,8 @@ mod tests {
     fn internal_revision_keys_cannot_be_changed_as_preferences() {
         assert!(validate_public_setting_key("_internal.memory_revision.project").is_err());
         assert!(validate_public_setting_key("_internal.any_future_state").is_err());
+        assert!(validate_public_setting_key("provider.routing_profile").is_err());
+        assert!(validate_public_setting_key("provider.anthropic.credential_ref").is_err());
         assert!(validate_public_setting_key("companion_name").is_ok());
     }
 

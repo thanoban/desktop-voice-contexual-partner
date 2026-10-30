@@ -424,7 +424,7 @@ export function SettingsPanel({ open, onClose }: Props) {
             </button>
           </div>
           <div style={{ fontSize: "10px", color: "var(--text-muted)", opacity: 0.6, textAlign: "center" }}>
-            AGPL-3.0 · All data stays on your machine
+            AGPL-3.0 · Data stays on this PC unless you choose a cloud provider
           </div>
         </div>
       </div>

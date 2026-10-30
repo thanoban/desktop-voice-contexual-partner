@@ -123,7 +123,7 @@ fn personality_prompt(preset: &str, name: &str, partner_mode: &str) -> String {
     };
 
     format!(
-        "You are {name}, a local AI companion running entirely on this user's machine. \
+        "You are {name}, a personal AI companion for this user. \
          {tone} {mode} \
          Keep responses conversational and concise — like a friend, not a lecture. \
          Do not use bullet points unless specifically asked. \
