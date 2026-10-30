@@ -363,3 +363,56 @@ export const getSessionTurns = (sessionId: string): Promise<TurnInfo[]> =>
 
 export const onPttToggle = (cb: () => void): Promise<UnlistenFn> =>
   listen("shortcut:ptt:toggle", () => cb());
+
+// ── Providers and routing (S3) ──────────────────────────────────────────────
+
+export type ProviderKind = "ollama" | "openai_compatible" | "anthropic";
+export type RoutingProfile = "local" | "hybrid" | "cloud";
+export type ProviderLocality = "local" | "loopback_unverified" | "remote";
+
+export interface DataDestination {
+  provider: ProviderKind;
+  host: string;
+  origin: string;
+  locality: ProviderLocality;
+}
+
+export interface ProviderInfo {
+  provider: ProviderKind;
+  label: string;
+  base_url: string;
+  model: string;
+  destination: DataDestination | null;
+  destination_error: string | null;
+  accepts_key: boolean;
+  requires_key: boolean;
+  has_key: boolean;
+  key_destination: string | null;
+}
+
+export interface ProviderSettingsView {
+  routing_profile: RoutingProfile;
+  active_provider: ProviderKind | null;
+  providers: ProviderInfo[];
+  route: { allowed: boolean; message: string | null; destination: DataDestination | null };
+}
+
+export const getProviderSettings = (): Promise<ProviderSettingsView> =>
+  invoke("get_provider_settings");
+export const setRoutingProfile = (profile: RoutingProfile): Promise<ProviderSettingsView> =>
+  invoke("set_routing_profile", { profile });
+export const setActiveProvider = (provider: ProviderKind): Promise<ProviderSettingsView> =>
+  invoke("set_active_provider", { provider });
+export const configureProvider = (
+  provider: ProviderKind,
+  baseUrl: string,
+  model: string,
+): Promise<ProviderSettingsView> =>
+  invoke("configure_provider", { provider, baseUrl, model });
+/** The key is sent once to the backend credential store and never returned. */
+export const setProviderKey = (provider: ProviderKind, key: string): Promise<ProviderSettingsView> =>
+  invoke("set_provider_key", { provider, key });
+export const clearProviderKey = (provider: ProviderKind): Promise<ProviderSettingsView> =>
+  invoke("clear_provider_key", { provider });
+export const hasProviderKey = (provider: ProviderKind): Promise<boolean> =>
+  invoke("has_provider_key", { provider });
