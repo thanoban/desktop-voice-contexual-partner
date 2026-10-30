@@ -44,8 +44,9 @@ anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# OS keychain (for DB key in M5)
-keyring = "3"
+# OS keychain: provider API keys (S3) and the DB key. Without a platform
+# feature keyring 3 silently uses an in-memory mock store.
+keyring = { version = "3", features = ["windows-native"] }
 
 # Platform dirs (voice model path resolution)
 dirs-next = "2"

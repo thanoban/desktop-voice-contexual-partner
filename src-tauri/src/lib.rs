@@ -264,6 +264,14 @@ pub fn run() {
             commands::memory::set_retention_settings,
             commands::memory::purge_expired_data,
             commands::history::delete_session_history,
+            // Providers and routing (S3)
+            commands::providers::get_provider_settings,
+            commands::providers::set_routing_profile,
+            commands::providers::set_active_provider,
+            commands::providers::configure_provider,
+            commands::providers::set_provider_key,
+            commands::providers::clear_provider_key,
+            commands::providers::has_provider_key,
         ])
         .run(tauri::generate_context!())
         .expect("Error running VoicePartner");

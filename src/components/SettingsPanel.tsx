@@ -9,6 +9,7 @@ import { ContextPermissionDialog } from "@/components/ContextPermissionDialog";
 import { ModelSetupPanel } from "@/components/ModelSetupPanel";
 import { AboutDialog } from "@/components/AboutDialog";
 import { VoiceGallery, VOICE_CATALOG } from "@/components/VoiceGallery";
+import { ProviderSettings } from "@/components/ProviderSettings";
 
 const PERSONALITIES = [
   { id: "gentle",    label: "Gentle",    desc: "Warm, patient, softly encouraging" },
@@ -317,6 +318,8 @@ export function SettingsPanel({ open, onClose }: Props) {
             />
           )}
         </Section>
+
+        <ProviderSettings />
 
         {/* Documents */}
         <Section title="Documents">

@@ -105,6 +105,8 @@ Keep current Tauri commands behind wrappers while migrating. New command groups:
 - Memory: list/edit/pin/correct/forget, toggle retention.
 - Routines: save reviewed workflow, create/update/disable schedule.
 
+Current S3 provider slice (2026-10-30, unit-tested with fake HTTP servers, not live-qualified): chat generation goes through a provider interface (`src-tauri/src/llm/provider.rs`) with Ollama NDJSON, OpenAI-compatible Chat Completions SSE and Anthropic Messages SSE adapters. Commands: `get_provider_settings`, `set_routing_profile`, `set_active_provider`, `configure_provider`, `set_provider_key`, `clear_provider_key`, `has_provider_key`; none returns a key. Settings rows: `provider.routing_profile` (`local` default, `hybrid`, `cloud`; unknown values read as `local`), `provider.active` (`ollama` default), and `provider.<id>.base_url|model|credential_ref` for `openai_compatible` and `anthropic`; Ollama keeps `endpoint`/`model`. Keys are stored only in Windows Credential Manager (service `VoicePartner`) under a reference bound to the destination host, so a changed base URL never receives an earlier key. Routing fails closed: `local` admits only Ollama on a loopback address; an OpenAI-compatible server on loopback is "loopback_unverified" and also refused. No provider falls back to another. The view exposes the active data destination (host and locality). Remote clients disable redirects, require https outside loopback, bound error bodies and redact keys from errors. Usage/budget fields, provider capability qualification and routing of embedding/summarization remain open; those still call local Ollama directly.
+
 Local API v1, disabled by default, reuses these services:
 
 | Route | Result |
