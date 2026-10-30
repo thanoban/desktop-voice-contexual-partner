@@ -84,6 +84,10 @@ pub fn select(conn: &Connection, project_id: &str) -> Result<ProjectSelection, S
         .map_err(|error| error.to_string())?;
     super::set_setting(&transaction, "selected_project_id", project_id)
         .map_err(|error| error.to_string())?;
+    // A context grant belongs to the workspace where the user enabled it.
+    for key in ["window_context_auto", "window_context_allowed"] {
+        super::set_setting(&transaction, key, "false").map_err(|error| error.to_string())?;
+    }
     transaction.execute(
         "INSERT INTO sessions (id, started_at, project_id, partner_mode) VALUES (?1, ?2, ?3, ?4)",
         params![session_id, timestamp, project_id, mode],
@@ -144,5 +148,28 @@ mod tests {
         assert!(create(&conn, &"a".repeat(101), "project").is_err());
         assert!(create(&conn, "Other personal", "personal").is_err());
         assert_eq!(list(&conn).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn switching_revokes_context_but_reselecting_preserves_current_grant() {
+        let conn = database();
+        for key in ["window_context_auto", "window_context_allowed"] {
+            crate::db::set_setting(&conn, key, "true").unwrap();
+        }
+        select(&conn, "personal").unwrap();
+        assert_eq!(
+            crate::db::get_setting(&conn, "window_context_auto").as_deref(),
+            Some("true")
+        );
+        assert!(select(&conn, "missing").is_err());
+        assert_eq!(
+            crate::db::get_setting(&conn, "window_context_allowed").as_deref(),
+            Some("true")
+        );
+        let client = create(&conn, "Client", "client").unwrap();
+        select(&conn, &client.id).unwrap();
+        for key in ["window_context_auto", "window_context_allowed"] {
+            assert_eq!(crate::db::get_setting(&conn, key).as_deref(), Some("false"));
+        }
     }
 }

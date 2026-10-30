@@ -5,10 +5,8 @@ import { onContextUpdate, stopSharingContext, type ContextStatus } from "@/lib/t
 
 export function StatusBar() {
   const { status, error, startPolling } = useOllamaStore();
-  const { model, window_context_auto } = useSettingsStore((s) => ({
-    model: s.settings.model,
-    window_context_auto: s.settings.window_context_auto,
-  }));
+  const model = useSettingsStore((s) => s.settings.model);
+  const window_context_auto = useSettingsStore((s) => s.settings.window_context_auto);
   const [ctx, setCtx] = useState<ContextStatus>({ sharing: false });
 
   useEffect(() => {
@@ -18,8 +16,13 @@ export function StatusBar() {
 
   useEffect(() => {
     let unlisten: (() => void) | null = null;
-    onContextUpdate((s) => setCtx(s)).then((fn) => { unlisten = fn; });
-    return () => { unlisten?.(); };
+    let disposed = false;
+    onContextUpdate((status) => {
+      if (disposed) return;
+      setCtx(status);
+      if (!status.sharing) void useSettingsStore.getState().load();
+    }).then((fn) => { if (disposed) fn(); else unlisten = fn; }).catch(() => undefined);
+    return () => { disposed = true; unlisten?.(); };
   }, []);
 
   const dot: Record<string, string> = {

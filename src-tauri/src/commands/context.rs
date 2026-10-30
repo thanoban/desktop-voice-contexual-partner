@@ -26,7 +26,7 @@ pub fn start_sharing_context(
     let title = crate::context::get_active_window_title();
 
     let status = {
-        let mut ctx = state.context.lock().unwrap();
+        let mut ctx = state.context.lock().map_err(|e| e.to_string())?;
         ctx.sharing = true;
         ctx.window_title = title.clone();
         ContextStatus {
@@ -44,8 +44,10 @@ pub fn start_sharing_context(
 #[tauri::command]
 pub fn stop_sharing_context(state: State<'_, AppState>, app: AppHandle) -> Result<(), String> {
     {
-        let mut ctx = state.context.lock().unwrap();
+        let mut ctx = state.context.lock().map_err(|e| e.to_string())?;
         *ctx = SharedContext::default();
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        super::settings::revoke_context_permission(&conn)?;
     }
     let _ = app.emit(
         "context:update",
@@ -67,7 +69,7 @@ pub fn set_context_note(
     note: String,
 ) -> Result<ContextStatus, String> {
     let status = {
-        let mut ctx = state.context.lock().unwrap();
+        let mut ctx = state.context.lock().map_err(|e| e.to_string())?;
         ctx.sharing = true;
         ctx.custom_note = if note.is_empty() { None } else { Some(note) };
         // Refresh window title when note is set
