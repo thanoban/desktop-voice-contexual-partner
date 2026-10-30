@@ -60,3 +60,21 @@ pub fn get_session_turns(
         })
         .collect())
 }
+
+/// Deletes one past conversation's transcript in the selected workspace.
+/// Memories summarised from it are kept; forgetting them is a separate action.
+#[tauri::command]
+pub fn delete_session_history(
+    state: State<'_, AppState>,
+    session_id: String,
+    project_id: String,
+) -> Result<usize, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::require_selected_project(&conn, &project_id)?;
+    crate::memory::retention::delete_session_history(
+        &conn,
+        &project_id,
+        &session_id,
+        crate::domain::now_ms(),
+    )
+}

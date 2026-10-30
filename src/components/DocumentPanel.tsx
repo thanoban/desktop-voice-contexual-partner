@@ -1,14 +1,14 @@
 import { useEffect, useState } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import {
-  listDocuments,
+  listDocumentRecords,
   deleteDocument,
   pickDocument,
   ingestDocument,
   onRagProgress,
   onRagDone,
   onRagError,
-  type DocumentInfo,
+  type DocumentRecord,
   type IngestProgress,
 } from "@/lib/tauri";
 
@@ -19,14 +19,14 @@ interface Props {
 
 export function DocumentPanel({ open, onClose }: Props) {
   const projectId = useSettingsStore((state) => state.settings.selected_project_id);
-  const [docs, setDocs] = useState<DocumentInfo[]>([]);
+  const [docs, setDocs] = useState<DocumentRecord[]>([]);
   const [progress, setProgress] = useState<IngestProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
-    listDocuments().then(setDocs).catch(() => null);
-  }, [open]);
+    listDocumentRecords().then(setDocs).catch(() => null);
+  }, [open, projectId]);
 
   useEffect(() => {
     if (!open) return;
@@ -35,7 +35,7 @@ export function DocumentPanel({ open, onClose }: Props) {
       onRagDone((result) => {
         if (result.project_id !== projectId) return;
         setProgress(null);
-        listDocuments().then(setDocs).catch(() => null);
+        listDocumentRecords().then(setDocs).catch(() => null);
         setError(null);
       }),
       onRagError((result) => {
@@ -112,7 +112,7 @@ export function DocumentPanel({ open, onClose }: Props) {
           <div>
             <h2 style={{ fontSize: "15px", fontWeight: 600 }}>Documents</h2>
             <p style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "2px" }}>
-              {docs.length} {docs.length === 1 ? "document" : "documents"} · chunks are searched alongside memories
+              {docs.length} {docs.length === 1 ? "document" : "documents"} · cited by name and revision in replies
             </p>
           </div>
           <div style={{ display: "flex", gap: "8px" }}>
@@ -195,7 +195,7 @@ export function DocumentPanel({ open, onClose }: Props) {
           )}
           {docs.map((doc) => (
             <div
-              key={doc.source_file}
+              key={doc.document_id}
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -220,8 +220,21 @@ export function DocumentPanel({ open, onClose }: Props) {
                   {doc.source_file}
                 </p>
                 <p style={{ fontSize: "10px", color: "var(--text-muted)", marginTop: "2px" }}>
-                  {doc.chunk_count} chunks · {formatAge(doc.ingested_at)}
+                  {doc.chunk_count} chunks · rev {doc.revision} · {formatAge(doc.ingested_at)}
                 </p>
+                <p
+                  style={{ fontSize: "10px", color: "var(--text-muted)", marginTop: "2px" }}
+                  title={`Document ${doc.document_id}${doc.content_sha256 ? ` · SHA-256 ${doc.content_sha256}` : ""}`}
+                >
+                  id {doc.document_id.slice(0, 8)}
+                  {doc.content_sha256 ? ` · sha256 ${doc.content_sha256.slice(0, 12)}` : " · legacy import (no content hash)"}
+                  {doc.embedding_model ? ` · ${doc.embedding_model}` : ""}
+                </p>
+                {doc.incompatible_chunks > 0 && (
+                  <p style={{ fontSize: "10px", color: "#fbbf24", marginTop: "2px" }}>
+                    {doc.incompatible_chunks} chunks use a different embedding model and are keyword-searched only. Re-add the file to re-embed it.
+                  </p>
+                )}
               </div>
               <button
                 type="button"
@@ -244,7 +257,7 @@ export function DocumentPanel({ open, onClose }: Props) {
             flexShrink: 0,
           }}
         >
-          Large documents (~50+ pages) take a few minutes to embed. App stays responsive during ingestion.
+          Large documents (~50+ pages) take a few minutes to embed. Re-adding a file creates a new revision; the previous one stays searchable until the new one finishes.
         </p>
       </div>
     </div>

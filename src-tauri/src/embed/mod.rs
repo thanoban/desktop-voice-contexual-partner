@@ -1,6 +1,10 @@
 use anyhow::{anyhow, Result};
 use serde::Deserialize;
 
+/// Default Ollama embedding model. Stored vectors record the model that
+/// produced them so retrieval never compares vectors across models.
+pub const DEFAULT_MODEL: &str = "nomic-embed-text";
+
 #[derive(Deserialize)]
 struct EmbedResponse {
     embedding: Vec<f32>,

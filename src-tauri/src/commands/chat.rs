@@ -223,30 +223,23 @@ pub async fn send_message(
         None
     };
 
-    let memory_block: Option<String> = query_emb.as_ref().and_then(|emb| {
-        let conn = state.db.lock().ok()?;
-        let results = memory::search_memories(&conn, emb, 3);
-        // Only inject memories with meaningful similarity (> 0.5)
-        let relevant: Vec<_> = results.into_iter().filter(|r| r.score > 0.5).collect();
-        if relevant.is_empty() {
-            None
-        } else {
-            let lines: Vec<String> = relevant
-                .iter()
-                .map(|r| {
-                    format!(
-                        "• {}: {}",
-                        format_age(r.memory.created_at),
-                        r.memory.content
-                    )
-                })
-                .collect();
-            Some(format!(
-                "[MEMORIES — relevant things from past conversations]\n{}\n[/MEMORIES]",
-                lines.join("\n")
-            ))
-        }
-    });
+    // Hybrid lexical + vector recall within the admitted project, with
+    // document citations. Lexical recall still works if embedding fails.
+    let memory_block: Option<String> = {
+        let hits = memory::retrieval::retrieve(
+            &state.db,
+            &memory::retrieval::RetrievalQuery {
+                project_id: &project_id,
+                text: &content,
+                embedding: query_emb.as_deref(),
+                embedding_model: &embedding_model,
+                // Only inject vector matches with meaningful similarity
+                min_similarity: 0.5,
+                top_k: 3,
+            },
+        );
+        memory::retrieval::prompt_block(&hits, format_age)
+    };
 
     // Build context injection: auto (always-on) or manual sharing
     let context_block = {

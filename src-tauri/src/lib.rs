@@ -123,6 +123,9 @@ pub fn run() {
                 rusqlite::Connection::open(&db_path).expect("Failed to open SQLite database");
 
             db::migrations::run(&conn).expect("Database migration failed");
+            if let Err(error) = memory::retention::purge_expired(&conn, domain::now_ms()) {
+                tracing::warn!("Retention purge failed: {}", error);
+            }
 
             app.manage(AppState {
                 db: Mutex::new(conn),
@@ -256,6 +259,11 @@ pub fn run() {
             commands::system::list_models,
             commands::system::expand_to_main,
             commands::system::export_conversation,
+            // Retrieval retention (S1.7 / S6.1)
+            commands::memory::get_retention_settings,
+            commands::memory::set_retention_settings,
+            commands::memory::purge_expired_data,
+            commands::history::delete_session_history,
         ])
         .run(tauri::generate_context!())
         .expect("Error running VoicePartner");
