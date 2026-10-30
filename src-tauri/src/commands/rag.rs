@@ -67,6 +67,12 @@ pub async fn ingest_document(
         .unwrap_or("document")
         .to_string();
 
+    let write_guard = {
+        let conn = state.db.lock().map_err(|error| error.to_string())?;
+        crate::db::require_selected_project(&conn, &project_id)?;
+        memory::begin_document_import(&conn, &project_id, &source_file)
+            .map_err(|error| error.to_string())?
+    };
     let src = source_file.clone();
     let app_bg = app.clone();
 
@@ -135,11 +141,16 @@ pub async fn ingest_document(
                         return;
                     }
                 };
-                if let Err(error) =
-                    memory::store_document_chunk(&conn, chunk, &emb, &src, &project_id)
-                {
-                    fail(error.to_string());
-                    return;
+                match memory::store_document_checked(&conn, &write_guard, chunk, &emb, i == 0) {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        fail("Import invalidated by deletion or a newer import".into());
+                        return;
+                    }
+                    Err(error) => {
+                        fail(error.to_string());
+                        return;
+                    }
                 }
                 stored += 1;
             }
