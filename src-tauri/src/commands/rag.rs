@@ -39,7 +39,8 @@ pub fn pick_document(app: AppHandle) -> Option<String> {
         })
 }
 
-/// Ingests a document: extracts text → chunks → embeds → stores.
+/// Ingests a document: extracts text → chunks → embeds → stores a staged
+/// revision, which replaces the active revision only once every chunk is stored.
 /// Returns immediately; progress is emitted via `rag:progress` events.
 /// Emits `rag:done` on success, `rag:error` on failure.
 #[tauri::command]
@@ -49,15 +50,13 @@ pub async fn ingest_document(
     path: String,
     project_id: String,
 ) -> Result<String, String> {
-    let (project_id, endpoint, embedding_model) = {
+    let (project_id, endpoint) = {
         let conn = state.db.lock().map_err(|error| error.to_string())?;
         crate::db::require_selected_project(&conn, &project_id)?;
         (
             crate::db::selected_project_id(&conn),
             crate::db::get_setting(&conn, "endpoint")
                 .unwrap_or_else(|| "http://localhost:11434".into()),
-            crate::db::get_setting(&conn, "embedding_model")
-                .unwrap_or_else(|| "nomic-embed-text".into()),
         )
     };
     let path_buf = PathBuf::from(&path);
@@ -73,12 +72,18 @@ pub async fn ingest_document(
         memory::begin_document_import(&conn, &project_id, &source_file)
             .map_err(|error| error.to_string())?
     };
+    // Embed with the model recorded in the guard so chunk provenance matches.
+    let embedding_model = write_guard.embedding_model().to_string();
     let src = source_file.clone();
     let app_bg = app.clone();
 
     tokio::spawn(async move {
         let state = app_bg.state::<AppState>();
         let fail = |message: String| {
+            // The previous active revision stays searchable; drop staged chunks.
+            if let Ok(conn) = state.db.lock() {
+                let _ = memory::abandon_document_import(&conn, &write_guard);
+            }
             let _ = app_bg.emit(
                 "rag:error",
                 IngestError {
@@ -102,6 +107,7 @@ pub async fn ingest_document(
                 }
             };
 
+        let content_sha256 = crate::rag::content_sha256(&text);
         let chunks = crate::rag::chunk_text(&text, 450, 80);
         let total = chunks.len();
 
@@ -133,26 +139,25 @@ pub async fn ingest_document(
                 }
             };
 
-            {
-                let conn = match state.db.lock() {
-                    Ok(c) => c,
-                    Err(_) => {
-                        fail("Document storage lock failed".into());
-                        return;
-                    }
-                };
-                match memory::store_document_checked(&conn, &write_guard, chunk, &emb, i == 0) {
-                    Ok(true) => {}
-                    Ok(false) => {
-                        fail("Import invalidated by deletion or a newer import".into());
-                        return;
-                    }
-                    Err(error) => {
-                        fail(error.to_string());
-                        return;
-                    }
+            // Release the lock before `fail`, which locks again to clean up.
+            let stored_chunk = state
+                .db
+                .lock()
+                .map_err(|_| "Document storage lock failed".to_string())
+                .and_then(|conn| {
+                    memory::store_document_revision_chunk(&conn, &write_guard, i, chunk, &emb)
+                        .map_err(|error| error.to_string())
+                });
+            match stored_chunk {
+                Ok(true) => stored += 1,
+                Ok(false) => {
+                    fail("Import invalidated by deletion or a newer import".into());
+                    return;
                 }
-                stored += 1;
+                Err(message) => {
+                    fail(message);
+                    return;
+                }
             }
 
             let _ = app_bg.emit(
@@ -164,6 +169,26 @@ pub async fn ingest_document(
                     total,
                 },
             );
+        }
+
+        let activated = state
+            .db
+            .lock()
+            .map_err(|_| "Document storage lock failed".to_string())
+            .and_then(|conn| {
+                memory::finish_document_import(&conn, &write_guard, Some(&content_sha256))
+                    .map_err(|error| error.to_string())
+            });
+        match activated {
+            Ok(true) => {}
+            Ok(false) => {
+                fail("Import invalidated by deletion or a newer import".into());
+                return;
+            }
+            Err(message) => {
+                fail(message);
+                return;
+            }
         }
 
         let _ = app_bg.emit(

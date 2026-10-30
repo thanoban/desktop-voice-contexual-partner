@@ -80,6 +80,17 @@ fn xml_to_text(xml: &str) -> String {
         .join("\n")
 }
 
+// ── Identity ─────────────────────────────────────────────────────────────────
+
+/// Lowercase hex SHA-256 of the extracted text, recorded per document revision.
+pub fn content_sha256(text: &str) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(text.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
 // ── Chunking ─────────────────────────────────────────────────────────────────
 
 /// Splits text into overlapping character-level chunks.
@@ -137,4 +148,15 @@ pub fn chunk_text(text: &str, chunk_size: usize, overlap: usize) -> Vec<String> 
     }
 
     chunks
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn content_hash_is_stable_sha256() {
+        assert_eq!(
+            super::content_sha256("abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
 }

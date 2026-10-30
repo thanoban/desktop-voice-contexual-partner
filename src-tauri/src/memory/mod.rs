@@ -1,7 +1,8 @@
+pub mod retention;
+pub mod retrieval;
+
 use rusqlite::Connection;
 use serde::Serialize;
-use std::cmp::{Ordering, Reverse};
-use std::collections::BinaryHeap;
 
 #[derive(Debug, Serialize, Clone)]
 pub struct Memory {
@@ -12,6 +13,13 @@ pub struct Memory {
     pub created_at: i64,
     pub source_file: Option<String>,
     pub project_id: String,
+    /// Embedding provenance. Vectors are compared only within the same model
+    /// and dimension; `None` means the row is lexical-only.
+    pub embedding_model: Option<String>,
+    pub embedding_dim: Option<i64>,
+    pub document_id: Option<String>,
+    pub document_revision: Option<i64>,
+    pub chunk_index: Option<i64>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -19,36 +27,40 @@ pub struct DocumentInfo {
     pub source_file: String,
     pub chunk_count: i64,
     pub ingested_at: i64,
+    pub document_id: String,
+    pub revision: i64,
+    pub content_sha256: Option<String>,
+    pub embedding_model: Option<String>,
+    /// Active chunks whose vectors came from a model other than the current
+    /// setting; they stay lexically searchable until the document is re-imported.
+    pub incompatible_chunks: i64,
 }
 
+#[cfg(test)]
 pub struct MemoryResult {
     pub memory: Memory,
     pub score: f32,
 }
 
-// The smallest candidate is evicted first. Ties prefer recent memories, then a
-// stable ID, independent of SQLite's scan order.
-struct Candidate(MemoryResult);
+pub(crate) const MEMORY_COLUMNS: &str =
+    "m.id, m.session_id, m.content, m.memory_type, m.created_at, m.source_file, m.project_id, \
+     m.embedding_model, m.embedding_dim, m.document_id, m.document_revision, m.chunk_index";
 
-impl PartialEq for Candidate {
-    fn eq(&self, other: &Self) -> bool {
-        self.cmp(other) == Ordering::Equal
-    }
-}
-impl Eq for Candidate {}
-impl PartialOrd for Candidate {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-impl Ord for Candidate {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.0
-            .score
-            .total_cmp(&other.0.score)
-            .then_with(|| self.0.memory.created_at.cmp(&other.0.memory.created_at))
-            .then_with(|| self.0.memory.id.cmp(&other.0.memory.id))
-    }
+pub(crate) fn memory_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Memory> {
+    Ok(Memory {
+        id: row.get(0)?,
+        session_id: row.get(1)?,
+        content: row.get(2)?,
+        memory_type: row.get(3)?,
+        created_at: row.get(4)?,
+        source_file: row.get(5)?,
+        project_id: row.get(6)?,
+        embedding_model: row.get(7)?,
+        embedding_dim: row.get(8)?,
+        document_id: row.get(9)?,
+        document_revision: row.get(10)?,
+        chunk_index: row.get(11)?,
+    })
 }
 
 // ── Embedding serialization ──────────────────────────────────────────────────
@@ -62,6 +74,19 @@ pub fn decode_embedding(bytes: &[u8]) -> Vec<f32> {
         .chunks_exact(4)
         .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
         .collect()
+}
+
+/// The configured embedding model, recorded as provenance on stored vectors.
+pub fn current_embedding_model(conn: &Connection) -> String {
+    crate::db::get_setting(conn, "embedding_model")
+        .unwrap_or_else(|| crate::embed::DEFAULT_MODEL.into())
+}
+
+fn provenance<'a>(model: &'a str, embedding: &[f32]) -> (Option<&'a str>, Option<i64>) {
+    if model.trim().is_empty() || embedding.is_empty() {
+        return (None, None);
+    }
+    (Some(model), i64::try_from(embedding.len()).ok())
 }
 
 // ── Similarity ───────────────────────────────────────────────────────────────
@@ -95,6 +120,15 @@ pub struct WriteGuard {
     project_id: String,
     project_revision: Option<String>,
     source_revision: Option<(String, Option<String>)>,
+    embedding_model: String,
+    /// Stable document ID and the staged revision this import writes.
+    document: Option<(String, i64)>,
+}
+impl WriteGuard {
+    /// Model the guarded work must embed with so stored provenance matches.
+    pub fn embedding_model(&self) -> &str {
+        &self.embedding_model
+    }
 }
 fn revision_key(project: &str, source: Option<&str>) -> String {
     format!(
@@ -113,13 +147,22 @@ fn invalidate(conn: &Connection, key: &str) -> rusqlite::Result<()> {
     conn.execute("INSERT INTO settings(key,value) VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", rusqlite::params![key, uuid::Uuid::new_v4().to_string()])?;
     Ok(())
 }
+/// Invalidates every pending memory/document write for a project.
+pub(crate) fn invalidate_project(conn: &Connection, project: &str) -> rusqlite::Result<()> {
+    invalidate(conn, &revision_key(project, None))
+}
 pub fn summary_guard(conn: &Connection, project: &str) -> rusqlite::Result<WriteGuard> {
     Ok(WriteGuard {
         project_id: project.into(),
         project_revision: revision(conn, &revision_key(project, None))?,
         source_revision: None,
+        embedding_model: current_embedding_model(conn),
+        document: None,
     })
 }
+/// Starts a new staged revision of a document. Its chunks stay invisible to
+/// retrieval until `finish_document_import` activates the revision, so a
+/// failed re-import leaves the previous revision intact.
 pub fn begin_document_import(
     conn: &Connection,
     project: &str,
@@ -128,8 +171,28 @@ pub fn begin_document_import(
     let tx = conn.unchecked_transaction()?;
     let key = revision_key(project, Some(source));
     invalidate(&tx, &key)?;
+    let now = now_ms();
+    tx.execute(
+        "INSERT INTO documents (id, project_id, source_name, active_revision, latest_revision, created_at, updated_at)
+         VALUES (?1, ?2, ?3, 0, 0, ?4, ?4) ON CONFLICT(project_id, source_name) DO NOTHING",
+        rusqlite::params![uuid::Uuid::new_v4().to_string(), project, source, now],
+    )?;
+    // Revision numbers are never reused, so a staged revision belongs to one import.
+    let (document_id, target, active): (String, i64, i64) = tx.query_row(
+        "UPDATE documents SET latest_revision = latest_revision + 1
+         WHERE project_id = ?1 AND source_name = ?2
+         RETURNING id, latest_revision, active_revision",
+        rusqlite::params![project, source],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    )?;
+    // Interrupted or superseded imports leave inactive chunks behind.
+    tx.execute(
+        "DELETE FROM memories WHERE document_id = ?1 AND document_revision != ?2",
+        rusqlite::params![document_id, active],
+    )?;
     let mut guard = summary_guard(&tx, project)?;
     guard.source_revision = Some((source.into(), revision(&tx, &key)?));
+    guard.document = Some((document_id, target));
     tx.commit()?;
     Ok(guard)
 }
@@ -160,33 +223,131 @@ pub fn store_summary_checked(
     if scope != guard.project_id || !valid_guard(&tx, guard)? {
         return Ok(false);
     }
-    store_memory(&tx, session, content, embedding, "session_summary")?;
+    store_memory(
+        &tx,
+        session,
+        content,
+        embedding,
+        "session_summary",
+        &guard.embedding_model,
+    )?;
     tx.commit()?;
     Ok(true)
 }
-pub fn store_document_checked(
+
+/// Stores one chunk of the guard's staged document revision.
+pub fn store_document_revision_chunk(
     conn: &Connection,
     guard: &WriteGuard,
+    chunk_index: usize,
     content: &str,
     embedding: &[f32],
-    replace: bool,
 ) -> rusqlite::Result<bool> {
     let tx = conn.unchecked_transaction()?;
     if !valid_guard(&tx, guard)? {
         return Ok(false);
     }
-    let Some((source, _)) = &guard.source_revision else {
+    let (Some((source, _)), Some((document_id, revision))) =
+        (&guard.source_revision, &guard.document)
+    else {
         return Ok(false);
     };
-    if replace {
-        tx.execute(
-            "DELETE FROM memories WHERE project_id=?1 AND source_file=?2",
-            rusqlite::params![guard.project_id, source],
-        )?;
+    let exists: i64 = tx.query_row(
+        "SELECT COUNT(*) FROM documents WHERE id = ?1 AND project_id = ?2",
+        rusqlite::params![document_id, guard.project_id],
+        |row| row.get(0),
+    )?;
+    if exists == 0 {
+        return Ok(false);
     }
-    store_document_chunk(&tx, content, embedding, source, &guard.project_id)?;
+    insert_chunk(
+        &tx,
+        &NewChunk {
+            project_id: &guard.project_id,
+            source_name: source,
+            document_id,
+            revision: *revision,
+            chunk_index: i64::try_from(chunk_index).unwrap_or(i64::MAX),
+            content,
+            embedding,
+            embedding_model: &guard.embedding_model,
+        },
+    )?;
     tx.commit()?;
     Ok(true)
+}
+
+/// Atomically makes the staged revision active and removes every other
+/// revision's chunks (and, through triggers, their lexical index rows).
+pub fn finish_document_import(
+    conn: &Connection,
+    guard: &WriteGuard,
+    content_sha256: Option<&str>,
+) -> rusqlite::Result<bool> {
+    let tx = conn.unchecked_transaction()?;
+    if !valid_guard(&tx, guard)? {
+        return Ok(false);
+    }
+    let Some((document_id, revision)) = &guard.document else {
+        return Ok(false);
+    };
+    let changed = tx.execute(
+        "UPDATE documents SET active_revision = ?2, content_sha256 = ?3, updated_at = ?4
+         WHERE id = ?1 AND project_id = ?5",
+        rusqlite::params![
+            document_id,
+            revision,
+            content_sha256,
+            now_ms(),
+            guard.project_id
+        ],
+    )?;
+    if changed == 0 {
+        return Ok(false);
+    }
+    tx.execute(
+        "DELETE FROM memories WHERE document_id = ?1 AND document_revision != ?2",
+        rusqlite::params![document_id, revision],
+    )?;
+    tx.commit()?;
+    Ok(true)
+}
+
+/// Discards chunks staged by a failed import. Revisions are unique per import,
+/// so this never touches the active or a newer revision.
+pub fn abandon_document_import(conn: &Connection, guard: &WriteGuard) -> rusqlite::Result<()> {
+    if let Some((document_id, revision)) = &guard.document {
+        conn.execute(
+            "DELETE FROM memories WHERE document_id = ?1 AND document_revision = ?2
+             AND document_revision != COALESCE((SELECT active_revision FROM documents WHERE id = ?1), 0)",
+            rusqlite::params![document_id, revision],
+        )?;
+    }
+    Ok(())
+}
+
+/// Legacy single-call import used by guard regression tests: stage one chunk
+/// and immediately activate the guard's revision.
+#[cfg(test)]
+pub fn store_document_checked(
+    conn: &Connection,
+    guard: &WriteGuard,
+    content: &str,
+    embedding: &[f32],
+    _replace: bool,
+) -> rusqlite::Result<bool> {
+    let Some((document_id, revision)) = &guard.document else {
+        return Ok(false);
+    };
+    let index: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM memories WHERE document_id = ?1 AND document_revision = ?2",
+        rusqlite::params![document_id, revision],
+        |row| row.get(0),
+    )?;
+    if !store_document_revision_chunk(conn, guard, index as usize, content, embedding)? {
+        return Ok(false);
+    }
+    finish_document_import(conn, guard, None)
 }
 
 /// Store a conversation summary (session-scoped, no source file).
@@ -196,23 +357,60 @@ pub fn store_memory(
     content: &str,
     embedding: &[f32],
     mem_type: &str,
+    embedding_model: &str,
 ) -> rusqlite::Result<()> {
     let id = uuid::Uuid::new_v4().to_string();
     let blob = encode_embedding(embedding);
+    let (model, dim) = provenance(embedding_model, embedding);
     let project_id: String = conn.query_row(
         "SELECT project_id FROM sessions WHERE id = ?1",
         rusqlite::params![session_id],
         |row| row.get(0),
     )?;
     conn.execute(
-        "INSERT INTO memories (id, session_id, content, embedding, memory_type, created_at, project_id)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        rusqlite::params![id, session_id, content, blob, mem_type, now_ms(), project_id],
+        "INSERT INTO memories (id, session_id, content, embedding, memory_type, created_at, project_id, embedding_model, embedding_dim)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        rusqlite::params![id, session_id, content, blob, mem_type, now_ms(), project_id, model, dim],
     )?;
     Ok(())
 }
 
-/// Store a document chunk (source_file is the document's display name).
+struct NewChunk<'a> {
+    project_id: &'a str,
+    source_name: &'a str,
+    document_id: &'a str,
+    revision: i64,
+    chunk_index: i64,
+    content: &'a str,
+    embedding: &'a [f32],
+    embedding_model: &'a str,
+}
+
+fn insert_chunk(conn: &Connection, chunk: &NewChunk<'_>) -> rusqlite::Result<()> {
+    let (model, dim) = provenance(chunk.embedding_model, chunk.embedding);
+    conn.execute(
+        "INSERT INTO memories (id, session_id, content, embedding, memory_type, created_at, source_file, project_id,
+                               embedding_model, embedding_dim, document_id, document_revision, chunk_index)
+         VALUES (?1, NULL, ?2, ?3, 'document', ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+        rusqlite::params![
+            uuid::Uuid::new_v4().to_string(),
+            chunk.content,
+            encode_embedding(chunk.embedding),
+            now_ms(),
+            chunk.source_name,
+            chunk.project_id,
+            model,
+            dim,
+            chunk.document_id,
+            chunk.revision,
+            chunk.chunk_index
+        ],
+    )?;
+    Ok(())
+}
+
+/// Appends an unguarded chunk to a document's active revision (test fixture).
+#[cfg(test)]
 pub fn store_document_chunk(
     conn: &Connection,
     content: &str,
@@ -220,132 +418,103 @@ pub fn store_document_chunk(
     source_file: &str,
     project_id: &str,
 ) -> rusqlite::Result<()> {
-    let id = uuid::Uuid::new_v4().to_string();
-    let blob = encode_embedding(embedding);
+    let now = now_ms();
     conn.execute(
-        "INSERT INTO memories (id, session_id, content, embedding, memory_type, created_at, source_file, project_id)
-         VALUES (?1, NULL, ?2, ?3, 'document', ?4, ?5, ?6)",
-        rusqlite::params![id, content, blob, now_ms(), source_file, project_id],
+        "INSERT INTO documents (id, project_id, source_name, active_revision, latest_revision, created_at, updated_at)
+         VALUES (?1, ?2, ?3, 1, 1, ?4, ?4) ON CONFLICT(project_id, source_name) DO NOTHING",
+        rusqlite::params![uuid::Uuid::new_v4().to_string(), project_id, source_file, now],
     )?;
-    Ok(())
+    let (document_id, revision): (String, i64) = conn.query_row(
+        "UPDATE documents SET active_revision = MAX(active_revision, 1), latest_revision = MAX(latest_revision, 1)
+         WHERE project_id = ?1 AND source_name = ?2 RETURNING id, active_revision",
+        rusqlite::params![project_id, source_file],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    let chunk_index: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM memories WHERE document_id = ?1 AND document_revision = ?2",
+        rusqlite::params![document_id, revision],
+        |row| row.get(0),
+    )?;
+    insert_chunk(
+        conn,
+        &NewChunk {
+            project_id,
+            source_name: source_file,
+            document_id: &document_id,
+            revision,
+            chunk_index,
+            content,
+            embedding,
+            embedding_model: &current_embedding_model(conn),
+        },
+    )
 }
 
 // ── Retrieval ────────────────────────────────────────────────────────────────
 
-/// Returns top-k memories (both conversation and document) by cosine similarity.
-/// Exact project-scoped scan with O(top_k * record size) retained candidates,
-/// rather than discarding older knowledge. Runtime remains linear in project
-/// size until a qualified vector index and embedding provenance are available.
+/// Vector-only exact top-k over the selected project and current embedding
+/// model. Production prompt assembly uses `retrieval::retrieve`.
+#[cfg(test)]
 pub fn search_memories(conn: &Connection, query: &[f32], top_k: usize) -> Vec<MemoryResult> {
-    if top_k == 0
-        || query.is_empty()
-        || query.iter().any(|v| !v.is_finite())
-        || query.iter().all(|v| *v == 0.0)
-    {
-        return vec![];
-    }
-    let Some(byte_length) = query
-        .len()
-        .checked_mul(4)
-        .and_then(|len| i64::try_from(len).ok())
-    else {
-        return vec![];
-    };
     let project_id = crate::db::selected_project_id(conn);
-    let mut stmt = match conn.prepare(
-        "SELECT id, session_id, content, embedding, memory_type, created_at, source_file, project_id
-         FROM memories WHERE project_id = ?1 AND length(embedding) = ?2",
-    ) {
-        Ok(s) => s,
-        Err(_) => return vec![],
-    };
-
-    let rows = match stmt.query_map(rusqlite::params![project_id, byte_length], |row| {
-        let mem = Memory {
-            id: row.get(0)?,
-            session_id: row.get(1)?,
-            content: row.get(2)?,
-            memory_type: row.get(4)?,
-            created_at: row.get(5)?,
-            source_file: row.get(6)?,
-            project_id: row.get(7)?,
-        };
-        let blob: Vec<u8> = row.get(3)?;
-        Ok((mem, blob))
-    }) {
-        Ok(rows) => rows,
-        Err(_) => return vec![],
-    };
-    let mut best = BinaryHeap::new();
-    for (memory, blob) in rows.filter_map(Result::ok) {
-        let embedding = decode_embedding(&blob);
-        if embedding.iter().any(|v| !v.is_finite()) || embedding.iter().all(|v| *v == 0.0) {
-            continue;
-        }
-        let candidate = Candidate(MemoryResult {
-            score: cosine_similarity(query, &embedding),
-            memory,
-        });
-        if best.len() < top_k {
-            best.push(Reverse(candidate));
-        } else if best.peek().is_some_and(|worst| candidate > worst.0) {
-            best.pop();
-            best.push(Reverse(candidate));
-        }
-    }
-    best.into_sorted_vec()
+    let model = current_embedding_model(conn);
+    let scored = retrieval::vector_candidates(conn, &project_id, &model, query, top_k, -1.0);
+    let ids: Vec<String> = scored.iter().map(|(id, _)| id.clone()).collect();
+    let mut rows = retrieval::fetch_active(conn, &project_id, &ids).unwrap_or_default();
+    scored
         .into_iter()
-        .map(|entry| entry.0 .0)
+        .filter_map(|(id, score)| {
+            rows.remove(&id)
+                .map(|(memory, _)| MemoryResult { memory, score })
+        })
         .collect()
 }
 
 /// Returns conversation memories (excludes document chunks).
 pub fn list_memories(conn: &Connection) -> Vec<Memory> {
     let project_id = crate::db::selected_project_id(conn);
-    let mut stmt = match conn.prepare(
-        "SELECT id, session_id, content, memory_type, created_at, source_file, project_id
-         FROM memories WHERE memory_type != 'document' AND project_id = ?1 ORDER BY created_at DESC",
-    ) {
+    let mut stmt = match conn.prepare(&format!(
+        "SELECT {MEMORY_COLUMNS} FROM memories m
+         WHERE m.memory_type != 'document' AND m.project_id = ?1 ORDER BY m.created_at DESC"
+    )) {
         Ok(s) => s,
         Err(_) => return vec![],
     };
-    stmt.query_map(rusqlite::params![project_id], |row| {
-        Ok(Memory {
-            id: row.get(0)?,
-            session_id: row.get(1)?,
-            content: row.get(2)?,
-            memory_type: row.get(3)?,
-            created_at: row.get(4)?,
-            source_file: row.get(5)?,
-            project_id: row.get(6)?,
-        })
-    })
-    .unwrap()
-    .filter_map(|r| r.ok())
-    .collect()
+    stmt.query_map(rusqlite::params![project_id], memory_from_row)
+        .map(|rows| rows.filter_map(|r| r.ok()).collect())
+        .unwrap_or_default()
 }
 
-/// Returns distinct documents with chunk counts.
+/// Returns active document revisions with chunk counts and provenance.
 pub fn list_documents(conn: &Connection) -> Vec<DocumentInfo> {
     let project_id = crate::db::selected_project_id(conn);
+    let model = current_embedding_model(conn);
     let mut stmt = match conn.prepare(
-        "SELECT source_file, COUNT(*) as chunk_count, MAX(created_at) as ingested_at
-         FROM memories WHERE memory_type = 'document' AND source_file IS NOT NULL AND project_id = ?1
-         GROUP BY source_file ORDER BY ingested_at DESC",
+        "SELECT d.source_name, COUNT(m.id), MAX(m.created_at), d.id, d.active_revision, d.content_sha256,
+                MAX(m.embedding_model),
+                SUM(CASE WHEN m.embedding_model IS ?2 THEN 0 ELSE 1 END)
+         FROM documents d
+         JOIN memories m ON m.document_id = d.id AND m.document_revision = d.active_revision
+         WHERE d.project_id = ?1 AND d.active_revision > 0
+         GROUP BY d.id ORDER BY MAX(m.created_at) DESC, d.id",
     ) {
         Ok(s) => s,
         Err(_) => return vec![],
     };
-    stmt.query_map(rusqlite::params![project_id], |row| {
+    stmt.query_map(rusqlite::params![project_id, model], |row| {
         Ok(DocumentInfo {
             source_file: row.get(0)?,
             chunk_count: row.get(1)?,
             ingested_at: row.get(2)?,
+            document_id: row.get(3)?,
+            revision: row.get(4)?,
+            content_sha256: row.get(5)?,
+            embedding_model: row.get(6)?,
+            incompatible_chunks: row.get(7)?,
         })
     })
-    .unwrap()
-    .filter_map(|r| r.ok())
-    .collect()
+    .map(|rows| rows.filter_map(|r| r.ok()).collect())
+    .unwrap_or_default()
 }
 
 pub fn delete_memory(conn: &Connection, id: &str) -> rusqlite::Result<()> {
@@ -368,6 +537,10 @@ pub fn delete_document(conn: &Connection, source_file: &str) -> rusqlite::Result
         "DELETE FROM memories WHERE source_file = ?1 AND project_id = ?2",
         rusqlite::params![source_file, project_id],
     )?;
+    tx.execute(
+        "DELETE FROM documents WHERE source_name = ?1 AND project_id = ?2",
+        rusqlite::params![source_file, project_id],
+    )?;
     tx.commit()?;
     Ok(())
 }
@@ -378,6 +551,10 @@ pub fn forget_all(conn: &Connection) -> rusqlite::Result<()> {
     invalidate(&tx, &revision_key(&project_id, None))?;
     tx.execute(
         "DELETE FROM memories WHERE project_id = ?1",
+        rusqlite::params![project_id],
+    )?;
+    tx.execute(
+        "DELETE FROM documents WHERE project_id = ?1",
         rusqlite::params![project_id],
     )?;
     tx.commit()?;
