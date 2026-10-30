@@ -2,7 +2,7 @@
 
 VoicePartner is planned as a local-first personal voice partner for people who work at a PC. It combines warm conversation, continuity, quiet company, and useful work assistance. Optional MCP, OpenClaw, n8n, Zapier, editor, browser, and Windows integrations extend what it can do.
 
-This checkout contains the existing v1 companion and the end-to-end product and architecture plan. Stage 0 implementation has begun with versioned domain contracts, canonical fixtures, timing primitives, a reliable new-session operation, automated Rust tests, and Windows CI. The provider and automation ecosystem remains planned until its later stage gates pass.
+This checkout contains the existing v1 companion and the end-to-end product and architecture plan. Foundation and reliability work includes scoped project workspaces, text input, partner modes, cancellable speech subprocesses, shared transcript recovery, older-memory recall and context revocation. Versioned contract foundations, timing primitives, automated checks and Windows CI are present. The provider and automation ecosystem remains planned until its later stage gates pass.
 
 Start with [PLAN.md](PLAN.md), then read [ARCHITECTURE.md](ARCHITECTURE.md), [docs/project-structure.md](docs/project-structure.md), [docs/integrations.md](docs/integrations.md), and [ROADMAP.md](ROADMAP.md). Historical documents and prior local notes are preserved under [docs/archive](docs/archive/README.md).
 

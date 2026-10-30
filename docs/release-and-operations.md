@@ -4,7 +4,7 @@ The release process must show what is proven at each boundary. A design, success
 
 ## 1. CI and local verification
 
-Create the planned `.github/workflows/verify.yml` and `scripts/verify.ps1` with these lanes:
+`.github/workflows/verify.yml` and `scripts/verify.ps1` currently validate contract fixtures, build the frontend, run snapshot/store regressions, and check Rust formatting, strict linting and tests. Expand them toward the complete lanes below; those lanes are not all implemented:
 
 1. Documentation/link check, generated contract/schema check, and repository secret scan.
 2. TypeScript strict build and frontend unit/event-reducer tests.
@@ -16,6 +16,8 @@ Create the planned `.github/workflows/verify.yml` and `scripts/verify.ps1` with 
 8. Separate opt-in live qualification jobs; credentials are managed outside the repository and never required for pull requests.
 
 Commands must use project-local dependencies and create build artifacts only in ignored locations. A green CI lane is evidence for that lane only.
+
+Windows/MSVC: `src-tauri/build.rs` embeds `windows-common-controls.manifest` for test harnesses as well as the application. Tauri's resource library retains icons/version metadata but omits its duplicate manifest. Preserve this split: missing Common Controls v6 can prevent tests starting with `STATUS_ENTRYPOINT_NOT_FOUND`, while two embedded manifests fail linking. Verify both `cargo test --locked --manifest-path src-tauri/Cargo.toml` and `cargo build --locked --manifest-path src-tauri/Cargo.toml --bin voicepartner` after build-resource changes. A debug build is not an installed/signed release qualification.
 
 ## 2. Test matrix
 

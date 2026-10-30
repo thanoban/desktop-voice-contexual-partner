@@ -32,6 +32,8 @@ External platforms can retain their own task/session copies. The connection UI m
 
 Context grants are checked before capture, before storage/retrieval, and immediately before transmission. Revocation cancels queued disclosures. Stopping sharing clears the manual context and disables auto-capture; old UI state is not authority.
 
+Current S1 implementation: stop sharing clears the manual title/note and transactionally sets automatic capture and permission to false. Enabling automatic capture requires permission; switching workspaces revokes it. Prompt construction reads current consent after memory retrieval. The full grant model, scoping of every context command, and cancellation of already assembled/in-flight disclosures remain requirements, not completed guarantees.
+
 ## 3. Credentials and storage
 
 - Keys/tokens and the database key live in the Windows credential store; SQLite holds references only.
@@ -57,6 +59,8 @@ Context grants are checked before capture, before storage/retrieval, and immedia
 | Remote copies | Provider-specific; disclosed, never silently called deleted |
 
 Forget-memory, delete-conversation, remove-document, and delete-project are separate clear actions. Offer a combined deletion flow when requested. Derived summaries, embeddings, indexes, queued memory jobs, and caches must honor deletion. A background task must not recreate content after deletion; use tombstone/revision checks.
+
+Current S1 implementation (2026-10-29): internal per-project and per-source revision tokens are persisted in SQLite settings. Conversation requests capture the project token before asynchronous work; imports capture both tokens before dispatch. Checked inserts validate those tokens in the same transaction as storage. Memory deletion invalidates project jobs, document removal invalidates that source's import, and forgetting all invalidates all pending memory writes for the project. Generic preference updates cannot alter `_internal.*` keys. A newer same-name import invalidates the older import; existing chunks survive extraction/embedding failure before the first valid replacement write. Later import failure can still leave a partial document; atomic whole-document revisions, stable source IDs, and full retention/deletion controls remain planned. These guards prevent pending work from undoing deletion; they do not erase retained conversation history or disable new memory creation from future conversations.
 
 File/source revocation immediately prevents future reads and invalidates cached context. Document replacement swaps active revision only after successful ingestion. Explain that filesystem secure erasure is not guaranteed by ordinary deletion; do not claim more than the implemented storage behavior.
 

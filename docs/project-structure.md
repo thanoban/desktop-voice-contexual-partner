@@ -52,6 +52,7 @@ VoicePartner/
 │   │   ├── Composer.tsx           Typed input, draft correction, send/stop
 │   │   ├── PartnerModeSwitch.tsx   Company/work/focus
 │   │   ├── ProjectSwitcher.tsx     Client/project boundary
+│   │   ├── WorkspaceBoundary.tsx  Refresh and reset views when selected scope changes
 │   │   ├── ActivityPanel.tsx       Runs, approvals, artifacts, known outcomes
 │   │   ├── ApprovalCard.tsx        Exact target and change review
 │   │   ├── IntegrationsPanel.tsx   Connected tools, capabilities, health
@@ -72,6 +73,8 @@ VoicePartner/
 │   │   └── projectStore.ts        Selected project and source list
 │   └── lib/
 │       ├── tauri.ts               Typed invoke/listen facade, legacy wrappers
+│       ├── useConversationSync.ts Shared transcript subscription and snapshot hydration
+│       ├── voiceInteraction.ts  Shared capture admission and cancellation handling
 │       ├── contracts.ts           Types generated from canonical schemas
 │       ├── eventReducer.ts        Deterministic dedupe/stale-event handling
 │       └── presentation.ts        Durations, costs, status wording

@@ -1,10 +1,10 @@
 # VoicePartner — implementation roadmap
 
-Status date: 2026-09-28. This roadmap is an implementation ledger, not a calendar promise. A stage is complete only when its exit evidence exists. Planned support is not shipped support.
+Status date: 2026-10-29. This roadmap is an implementation ledger, not a calendar promise. A stage is complete only when its exit evidence exists. Planned support is not shipped support.
 
 ## Current baseline
 
-The plan was published at `bc734ce` on `main`, with earlier local documents preserved at `docs/archive/`. S0 is now in progress: shared Rust/TypeScript contracts, canonical fixtures, timing primitives, Windows CI, and a local verification script are implemented. Nine Rust tests pass, including session lifecycle, run-state, policy-default, timing, and fixture tests. Existing local voice, memory, RAG, and widget features still require runtime qualification.
+The plan was published at `bc734ce` on `main`, with earlier local documents preserved at `docs/archive/`. S0 and S1 are in progress: contracts, timing primitives, CI, scoped workspaces, stream framing, text input, partner modes and tracked playback cancellation are implemented. The current parallel development slice adds shared transcript recovery, older-memory retrieval and context revocation. Existing local voice, memory, RAG, and widget features still require runtime qualification.
 
 ### Current implementation evidence
 
@@ -14,7 +14,7 @@ The plan was published at `bc734ce` on `main`, with earlier local documents pres
 | Contract foundations | unit-tested | Rust domain types, TypeScript mirrors, JSON schemas and fixtures |
 | Session creation semantics | unit-tested | A new session transaction closes prior open sessions; legacy reuse remains tested |
 | Verification pipeline | implemented | `scripts/verify.ps1` and `.github/workflows/verify.yml` |
-| Baseline automated suite | unit-tested | 15 passed, 0 failed on 2026-09-28 |
+| Current automated suite | unit-tested | Full `scripts/verify.ps1` passed on 2026-10-29: 57 Rust tests, 8 frontend snapshot/interaction regressions, 5 contract JSON files, formatting, strict Clippy, frontend production build and native Windows debug build |
 | Recording completion and input formats | unit-tested | Explicit worker completion replaces fixed delay; f32/i16/u16 capture and bounded buffers compile; resampling tests pass |
 | Ollama stream framing | unit-tested | Split JSON, split UTF-8, multi-frame chunks, malformed frames and final frames are covered |
 | Typed text fallback | implemented | Keyboard-accessible composer supports Enter to send and Shift+Enter for multiline drafts |
@@ -23,7 +23,13 @@ The plan was published at `bc734ce` on `main`, with earlier local documents pres
 | Playback cancellation | unit-tested | Piper, Kokoro and SAPI synthesis and playback run as tracked subprocesses under a cancel epoch; `stop_speaking` kills the live process and reports `stopped` or `idle`; cancelled work never spawns the next stage. 30 Rust tests pass. Not yet live-qualified on audio hardware; in-process native playback (queue, consumed offsets) remains S2 |
 | Partner modes | implemented | Company, Work and Focus are persisted preferences and alter backend conversation behavior |
 | Schema v7 project boundary | unit-tested | Legacy sessions and memories migrate to the explicit Personal scope; new sessions record project and mode |
-| Project-scoped retrieval, history and workspace switching | unit-tested | Memories, documents, sessions and turns filter by selected project; stale-workspace requests are rejected; switching opens a fresh session; 26 Rust tests pass. Indexed/relevance-bounded retrieval (replacing the 200-entry scan) remains planned |
+| Project-scoped retrieval, history and workspace switching | unit-tested | Memories, documents, sessions and turns filter by selected project; stale-workspace requests are rejected; switching opens a fresh session. Indexed retrieval remains planned |
+| Shared main/widget transcript | unit-tested | Revisioned backend snapshots carry accepted user messages, streamed output, history and errors; separate store instances converge despite duplicates and late events. Failed partials remain visible; Alt+Space targets one window. Live two-window qualification remains open |
+| Audio-state recovery and failure cleanup | unit-tested | Listening, transcription and speech share the snapshot revision; owner-specific leases clean up errors and completion. Voice previews serialize with chat/capture. Queued speech retains its admitted cancellation epoch; Whisper cancellation kills/reaps its direct subprocess and suppresses the transcript. The explicit transcript output path is covered by a fake-executable roundtrip; output bounds and cleanup are tested. Rapid local controls are guarded. Hardware recovery remains open |
+| Older-memory recall | unit-tested | An older relevant record survives 250 newer distractors; project scope and malformed/nonfinite/zero vector exclusions are tested. Retained top-k candidates are bounded. Exact scan remains linear; vector indexing and model provenance are not implemented |
+| Context revocation | unit-tested | Stop sharing disables automatic capture and clears manual context; automatic mode requires consent; changing workspace revokes context permission. Invalid settings and transactional rollback are covered. Queued/in-flight disclosure cancellation remains open |
+| Pending memory-write invalidation | unit-tested | Project/source revision tokens prevent admitted summary/import jobs restoring deleted data; same-source imports supersede older jobs. Replacement begins at first successful chunk so admission/extraction failure preserves prior data. Regression cases cover delayed writes, source replacement and scope isolation. Full document revisions and retention controls remain planned |
+| Windows test/application manifest | build-verified | MSVC linker embeds Common Controls v6 for both test harnesses and app; Tauri icon/version resources remain separate to avoid duplicate manifests. Rust tests and native debug application build pass |
 | Live voice, provider, integration and installed-device behavior | planned | Requires the later stage gates below |
 
 ## Stage gates

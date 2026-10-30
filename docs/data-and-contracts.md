@@ -26,6 +26,10 @@ Status: proposed v1 contracts, to implement in S0–S5. Existing commands and ta
 
 Backend conversation states: idle, listening, transcribing, generating, speaking, cancelling, failed. Generation and playback may overlap; the snapshot represents their separate substate rather than mutually exclusive UI booleans.
 
+Current S1 bridge (2026-10-25): `get_conversation_snapshot` and `conversation:snapshot` expose a process-monotonic `revision`, project/session IDs, accepted messages, streaming text, generation/error state, active-turn cancellation state and `audio: {listening, transcribing, speaking}`. Both views subscribe before hydration and discard older/equal revisions or a different project. Backend messages replace the local transcript rather than appending duplicate tokens. Failed partial output remains visible, and command leases publish terminal state on early exit. Audio owners release only their own phase; reopening a view recovers audio state from the same revisioned snapshot. Speech audition takes the same admission lease as chat and recording. This bridge sends full snapshots and is not yet the canonical durable event envelope below. Large-session serialization and hardware recovery qualification remain open.
+
+Speech uses the cancellation epoch captured before command admission, so a queued synthesis task cannot sample a newer epoch and speak after Stop. Whisper uses an owned asynchronous subprocess: cancellation kills/reaps the direct child and returns an empty transcript; output pipes and transcript reads are bounded to 1 MiB each, and temporary transcript files are cleaned on exit. Descendant process-tree supervision is not implemented; configured executables should be direct Whisper binaries rather than spawning wrappers. Capture worker errors signal stop and release listening state; automatic completion before submission reports that the recording must be retried rather than silently sending a message. Intentional cancellation returns quietly.
+
 Canonical events include `session.snapshot`, `turn.started`, `transcript.partial`, `transcript.final`, `response.delta`, `speech.started`, `speech.progress`, `turn.completed`, `turn.interrupted`, and `turn.failed`. A turn has one terminal result. Outdated worker output cannot append to a newer turn.
 
 Interruption retains generated text for history with an interrupted marker and spoken offset. Conversational context marks which text the user actually heard. Never assume unplayed instructions were communicated.
@@ -149,6 +153,8 @@ Sensitive retained text and indexes reside in the encrypted DB. Artifacts stay i
 7. On failure, leave the original usable and report recovery. Do not leave half-applied schema, silently drop data, or claim encryption before verification.
 
 Schema version numbers after v6 are reserved by this plan; implement them sequentially and never modify an applied migration. Encryption conversion has its own journal and is not just a schema-version increment. Existing plaintext backups require explicit retention choice and are never called encrypted.
+
+Interim S1 write invalidation uses persisted `_internal.memory_revision.*` settings rather than consuming a reserved migration number. Keys encode project/source components as JSON, and revision values are opaque UUIDs. Deletion/invalidation and guarded writes are transactional. Move this state into the qualified versioned document/retention model when that migration is implemented; do not expose it through user-editable preferences.
 
 ## 7. Worker protocol
 

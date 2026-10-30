@@ -122,3 +122,9 @@ Offer a pronunciation dictionary, pace control, concise response preference, and
 - Soak: eight-hour co-working, repeated device changes, suspend/resume, provider outage, queued work, indexing, and model unloading. Watch resident memory, handles, orphan processes, and task loss.
 
 Do not publish superiority or loneliness-reduction claims from a code build or synthetic benchmark alone.
+
+## Current instrumentation (2026-10-28)
+
+The local runtime logs content-free `stage`, `duration_ms`, and (for generation/transcription) `outcome` fields. `generation` measures the Ollama streaming request through completion, failure or cancellation; `transcription` measures the owned Whisper request; `speech_activity` measures combined synthesis/playback through cleanup, including errors. These use monotonic timers and contain no transcript, task text, document content, model path or project identity.
+
+These logs are instrumentation rather than a measured baseline. They do not yet measure capture/finalization, embedding/context preparation, first-token/first-audio, acoustic interruption, or actual hardware playback halt. Record those separately before comparing the targets above. Speech duration alone does not imply successful audible output.

@@ -4,23 +4,23 @@ Design date: 2026-09-27. This describes observed code and the proposed target se
 
 ## 1. Current implementation
 
-Baseline inspected: `be13b48` on main. The plan was published at `bc734ce`; Stage 0 implementation began afterward. Original local planning edits are preserved in [the archive](docs/archive/README.md).
+Current reliability work reviewed on 2026-10-25, building on `59cab64`. The plan was published at `bc734ce`; foundation and S1 work followed. Original local planning edits are preserved in [the archive](docs/archive/README.md).
 
 | Subsystem | Observed implementation | Required change |
 |---|---|---|
-| Desktop | Tauri main window, tray, separate widget | Backend ownership of conversation state and global shortcut handling |
-| Capture | CPAL, growing sample vector, WAV output, fixed 200 ms wait | Bounded buffers, supported sample formats, explicit completion, VAD |
-| Recognition | New whisper.cpp CLI process per recording; English hardcoded | Warm worker and partial transcripts |
-| Reasoning | Ollama chat stream | Frame/UTF-8-safe decoding, provider abstraction, cancellation |
+| Desktop | Tauri main window, tray, widget; revisioned backend transcript and audio snapshots | Installed two-window, device-recovery and shortcut qualification |
+| Capture | CPAL, bounded buffers, supported sample formats, explicit WAV completion, worker-exit monitoring and error-triggered stop | Persistent recognition, VAD and device recovery qualification |
+| Recognition | Owned cancellable whisper.cpp process per recording; bounded output; English hardcoded | Warm worker, partial transcripts and direct-device latency qualification |
+| Reasoning | Frame/UTF-8-safe Ollama stream with generation cancellation | Provider abstraction and latency qualification |
 | Speech | Per-request Piper/SAPI/Kokoro; PowerShell WAV playback | Phrase streaming, persistent inference, native playback |
-| Stop | `stop_speaking` returns success without stopping audio | Owned cancellation across generation and playback |
-| Context | Window title and manual note | Backend grants; stop-sharing must also stop the automatic path |
-| Memory/RAG | BLOB embeddings, cosine scan of last 200 records | Project isolation, provenance, source identity, indexed retrieval |
-| Sessions | Four-hour reuse helper | New-session command must actually close/create a session |
+| Stop | Tracked synthesis/playback subprocesses and explicit stop outcomes | Hardware qualification, native playback queue and consumed offsets |
+| Context | Window title and manual note; stop revokes auto capture; switching project revokes context permission | Scoped grants on every entry point and revocation of already queued disclosures |
+| Memory/RAG | Project-scoped exact cosine scan with bounded top-k retention and vector validation | Model provenance, stable source identity, indexed retrieval and large-project latency qualification |
+| Sessions | Explicit session creation, scoped history and workspace switching | Retention controls and installed recovery qualification |
 | Storage | Bundled SQLite; keyring dependency | Encryption and real credential-store use are not implemented |
 | Integration | Tauri commands/frontend wrappers | MCP, external-job lifecycle, provider and API services |
 
-Frontend production build, strict Rust linting, and the initial nine domain/database tests pass. Windows CI and canonical contract fixtures now exist. This proves the foundation compiles and its declared invariants hold; live speech, integrations, installer behavior, and pilot qualification remain open.
+Windows CI, canonical contract fixtures and the local verification script exist. Consult [the roadmap](ROADMAP.md) for the latest executed checks. Build and unit-test evidence does not qualify live speech, integrations, installer behavior or companionship outcomes.
 
 Also address TTS error cleanup, temporary files, model download integrity, and the currently disabled Content Security Policy before expanding privileged automation.
 
