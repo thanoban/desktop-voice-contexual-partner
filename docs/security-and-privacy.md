@@ -2,6 +2,8 @@
 
 This is a product engineering specification for the approved automation scope. It describes planned controls; current code does not yet implement all of them. Apply the same policy service to Tauri, local API, MCP server, scheduled work, and external-agent delegation.
 
+**2026-11-21 implementation warning:** provider keys use Windows Credential Manager, but the SQLite database is not encrypted. Current private-local routing does not constrain all embedding/summary requests, and legacy inference clients permit redirects. Manual context mutations also lack a workspace token. See [system review R01–R10](system-review-2026-11-21.md) for evidence and repair gates; the requirements below are not guarantees of current behavior.
+
 ## 1. Authority model
 
 Only explicit user intent and stored user grants authorize actions. Web pages, files, screenshots, tool descriptions/results, model output, and external-agent messages are data. None can add tools, broaden filesystem access, approve an action, change a provider, or disable policy.

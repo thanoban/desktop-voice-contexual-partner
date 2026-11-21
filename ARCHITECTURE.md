@@ -4,21 +4,21 @@ Design date: 2026-09-27. This describes observed code and the proposed target se
 
 ## 1. Current implementation
 
-Current reliability work reviewed on 2026-10-25, building on `59cab64`. The plan was published at `bc734ce`; foundation and S1 work followed. Original local planning edits are preserved in [the archive](docs/archive/README.md).
+Current implementation reviewed on 2026-11-21 at `61e483f`. The plan was published at `bc734ce`; reliability, schema v9 retrieval/retention and provider work followed. See the [system review](docs/system-review-2026-11-21.md) for prioritized findings and evidence boundaries. Original local planning edits are preserved in [the archive](docs/archive/README.md).
 
 | Subsystem | Observed implementation | Required change |
 |---|---|---|
 | Desktop | Tauri main window, tray, widget; revisioned backend transcript and audio snapshots | Installed two-window, device-recovery and shortcut qualification |
 | Capture | CPAL, bounded buffers, supported sample formats, explicit WAV completion, worker-exit monitoring and error-triggered stop | Persistent recognition, VAD and device recovery qualification |
 | Recognition | Owned cancellable whisper.cpp process per recording; bounded output; English hardcoded | Warm worker, partial transcripts and direct-device latency qualification |
-| Reasoning | Frame/UTF-8-safe Ollama stream with generation cancellation | Provider abstraction and latency qualification |
+| Reasoning | Ollama/OpenAI-compatible/Anthropic streaming adapters, routing settings and generation cancellation | Whole-pipeline destination enforcement, route pinning, provider-neutral readiness and live qualification |
 | Speech | Per-request Piper/SAPI/Kokoro; PowerShell WAV playback | Phrase streaming, persistent inference, native playback |
 | Stop | Tracked synthesis/playback subprocesses and explicit stop outcomes | Hardware qualification, native playback queue and consumed offsets |
 | Context | Window title and manual note; stop revokes auto capture; switching project revokes context permission | Scoped grants on every entry point and revocation of already queued disclosures |
-| Memory/RAG | Project-scoped exact cosine scan with bounded top-k retention and vector validation | Model provenance, stable source identity, indexed retrieval and large-project latency qualification |
-| Sessions | Explicit session creation, scoped history and workspace switching | Retention controls and installed recovery qualification |
-| Storage | Bundled SQLite; keyring dependency | Encryption and real credential-store use are not implemented |
-| Integration | Tauri commands/frontend wrappers | MCP, external-job lifecycle, provider and API services |
+| Memory/RAG | Project-scoped FTS5 lexical/exact paged vector fusion, model/dimension provenance, document revisions and citations | Vector scalability, same-name source disambiguation and migration/recovery qualification |
+| Sessions | Explicit session creation, scoped history/workspaces, retention limits and history deletion | Long-session expiry policy and installed recovery qualification |
+| Storage | Bundled ordinary SQLite; Windows Credential Manager provider-key backend | Database encryption, backup/restore and real-account qualification |
+| Integration | Tauri commands/frontend wrappers and domain contracts | Runtime MCP, policy/ledger, external-job lifecycle and local API services |
 
 Windows CI, canonical contract fixtures and the local verification script exist. Consult [the roadmap](ROADMAP.md) for the latest executed checks. Build and unit-test evidence does not qualify live speech, integrations, installer behavior or companionship outcomes.
 

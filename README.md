@@ -2,13 +2,13 @@
 
 VoicePartner is planned as a local-first personal voice partner for people who work at a PC. It combines warm conversation, continuity, quiet company, and useful work assistance. Optional MCP, OpenClaw, n8n, Zapier, editor, browser, and Windows integrations extend what it can do.
 
-This checkout contains the existing v1 companion and the end-to-end product and architecture plan. Foundation and reliability work includes scoped project workspaces, text input, partner modes, cancellable speech subprocesses, shared transcript recovery, older-memory recall and context revocation. Versioned contract foundations, timing primitives, automated checks and Windows CI are present. The provider and automation ecosystem remains planned until its later stage gates pass.
+This checkout contains the companion, reliability groundwork, schema v9 retrieval/retention, and text-provider adapters for Ollama, OpenAI-compatible services and Anthropic. Automation integrations remain planned in main. The [2026-11-21 system review](docs/system-review-2026-11-21.md) records current capabilities, privacy and usability blockers, verification limits, and the remaining delivery sequence. The project is not ready for public beta.
 
 Start with [PLAN.md](PLAN.md), then read [ARCHITECTURE.md](ARCHITECTURE.md), [docs/project-structure.md](docs/project-structure.md), [docs/integrations.md](docs/integrations.md), and [ROADMAP.md](ROADMAP.md). Historical documents and prior local notes are preserved under [docs/archive](docs/archive/README.md).
 
 ## Current baseline
 
-The existing app includes a Tauri desktop shell, React interface, Ollama text streaming, CPAL/whisper.cpp voice input, Piper/SAPI/Kokoro speech paths, SQLite history and memory, document ingestion, window context, system tray/widget behavior, and setup downloads. It still has known gaps around warm inference, VAD, sentence streaming, native cancellation, encryption, indexed retrieval, provider abstraction, permissions, and integrations.
+The app includes a Tauri desktop shell, React interface, streaming text-provider abstraction, CPAL/whisper.cpp voice input, Piper/SAPI/Kokoro speech paths, SQLite history, FTS5 plus paged exact vector retrieval, document revisions/citations, retention controls, window context, tray/widget behavior, and setup downloads. Warm inference, VAD, phrase streaming, native playback, encryption, enforceable automation permissions, and integrations remain open. The current Local profile does not enforce locality for every auxiliary inference request; see review findings R01–R02 before relying on it for private processing.
 
 Run `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1` for contract validation, the frontend production build, Rust formatting and lints, and Rust tests. These checks do not qualify live audio, cloud providers, integrations, installer behavior, or the companionship experience.
 

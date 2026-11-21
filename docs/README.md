@@ -1,9 +1,11 @@
 # VoicePartner documentation
 
-The current design is the personal partner plus automation ecosystem plan approved on 2026-09-27. This publication contains plans only. Application code remains at the inspected baseline.
+The current design is the personal partner plus automation ecosystem plan approved on 2026-09-27. Application implementation has progressed through reliability, retrieval/retention and text-provider foundations. The dated system review distinguishes implemented code from remaining work and qualification.
 
 | Document | Read it for |
 |---|---|
+| [System review — 2026-11-21](system-review-2026-11-21.md) | Current capabilities, prioritized findings, verification and remaining delivery sequence |
+| [Development handoff](../DEVELOPMENT_HANDOFF.md) | Current starting point and publication/qualification boundaries |
 | [Product plan](../PLAN.md) | Audience, experience, defaults, release targets |
 | [Architecture](../ARCHITECTURE.md) | Observed code and target runtime boundaries |
 | [Project structure](project-structure.md) | Proposed folders/files, responsibilities and migration map |
